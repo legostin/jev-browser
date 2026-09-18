@@ -149,6 +149,11 @@ export class BrowserAdapter {
       switch (action.op) {
         case 'click': await element.click({noWaitAfter:true}); break;
         case 'hover': await element.hover(); break;
+        case 'fill_secret':
+          if (!node.states.sensitive) throw new Error('Private input requires a sensitive field.');
+          if (typeof text !== 'string') throw new Error('Private input required.');
+          try { await element.fill(text); } catch { throw new Error('Private input result is uncertain. Inspect the browser before continuing.'); }
+          break;
         case 'fill':
           if (typeof text !== 'string') throw new Error('A supplied text value is required.');
           await element.fill(text); break;

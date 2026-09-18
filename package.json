@@ -11,7 +11,9 @@
     "check": "tsc --noEmit",
     "test": "npm run build && node --test --test-concurrency=1 dist/tests/*.test.js",
     "start": "node dist/src/cli.js",
-    "mcp": "node dist/src/mcp.js"
+    "mcp": "node dist/src/mcp.js",
+    "setup": "node scripts/setup.mjs",
+    "test:installer": "node --test tests/installer.test.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",

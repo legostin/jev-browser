@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { TaskManager } from './engine.js';
-import { TaskInput } from './schema.js';
+import { TaskRequest } from './schema.js';
 
 async function body(request:IncomingMessage) {
   const parts:Buffer[]=[];let size=0;
@@ -33,14 +33,19 @@ export async function dashboard(manager:TaskManager,port=0) {
       if(supplied.length!==expected.length||!timingSafeEqual(supplied,expected)) return reply(401,{error:'Open the dashboard using its private launch link.'});
       if(request.method==='GET'&&url.pathname==='/api/status') return reply(200,{configured:!!process.env.OPENROUTER_API_KEY,model:process.env.JEV_MODEL||'typesafe/jev-1.13',tasks:manager.list(),extension:manager.extension.status()});
       if(request.method==='POST'&&url.pathname==='/api/tasks') return reply(201,await manager.start(await body(request)));
-      const match=url.pathname.match(/^\/api\/tasks\/([a-f0-9-]{36})(?:\/(pause|resume|cancel))?$/);
+      const match=url.pathname.match(/^\/api\/tasks\/([a-f0-9-]{36})(?:\/(pause|resume|cancel|secret))?$/);
       if(match) {
         const [,id,action]=match;
         if(request.method==='GET'&&!action) return reply(200,manager.get(id));
         if(request.method==='POST') {
+          if(action==='secret') {
+            const data=z.object({target:z.string().min(1).max(200),secret:z.string().min(1).max(4000)}).strict().parse(await body(request));
+            try { return reply(200,await manager.fillSecret(id,data.target,data.secret)); }
+            finally { data.secret=''; }
+          }
           if(action==='pause') return reply(200,await manager.pause(id));
           if(action==='cancel') return reply(200,await manager.cancel(id));
-          if(action==='resume') return reply(200,await manager.resume(id,TaskInput.partial().parse(await body(request))));
+          if(action==='resume') return reply(200,await manager.resume(id,TaskRequest.partial().parse(await body(request))));
         }
       }
       reply(404,{error:'Not found.'});

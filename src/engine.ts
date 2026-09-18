@@ -4,25 +4,27 @@ import { BrowserAdapter, StaleObservation, digest, httpUrl } from './browser.js'
 import { project, descendants, verify } from './projection.js';
 import { JevProvider, type DecisionProvider } from './model.js';
 import { TaskStore } from './store.js';
-import { TaskInput, type TaskRecord, type Action, type Snapshot } from './schema.js';
+import { TaskInput, TaskRequest, type SecretDescriptor, type TaskRecord, type Action, type Snapshot } from './schema.js';
 import { ExtensionBridge } from './extension.js';
 import { actionContext, beginBrowserSession, rememberActionResult, rememberObservation } from './journey.js';
 
-interface Live { browser:BrowserAdapter; controller:AbortController; promise?:Promise<void>; focus?:string; index:number; opened?:boolean; advanced?:boolean }
+interface Live { browser:BrowserAdapter; controller:AbortController; promise?:Promise<void>; focus?:string; index:number; opened?:boolean; advanced?:boolean; secretBusy?:boolean }
 export class TaskManager extends EventEmitter {
   readonly tasks = new Map<string,TaskRecord>();
   readonly extension = new ExtensionBridge();
   private live = new Map<string,Live>();
+  private secrets = new Map<string,(SecretDescriptor & {text:string})[]>();
   constructor(readonly store = new TaskStore(), private provider:DecisionProvider = new JevProvider(), private browserFactory?: (input:TaskInput)=>BrowserAdapter) { super(); }
   async init() { for (const record of await this.store.load()) this.tasks.set(record.id,record); }
   get(id:string) { const t=this.tasks.get(id); if(!t) throw new Error('Task not found.'); return t; }
   list() { return [...this.tasks.values()].map(t=>({id:t.id,goal:t.input.goal,status:t.status,steps:t.steps,message:t.message,updatedAt:t.updatedAt,evidenceCount:t.evidence.length})).reverse(); }
   private async save(task:TaskRecord) { task.updatedAt=new Date().toISOString(); await this.store.save(task); this.emit('change',task.id); }
   async start(raw:unknown) {
-    const input=TaskInput.parse(raw); httpUrl(input.url);
+    const {secrets,...input}=TaskRequest.parse(raw); httpUrl(input.url);
     if ([...this.tasks.values()].filter(t=>t.status==='running').length>=3) throw new Error('Three tasks are already running. Pause one first.');
     const now=new Date().toISOString();
     const task:TaskRecord={id:randomUUID(),input,status:'running',createdAt:now,updatedAt:now,steps:0,requests:0,elapsedMs:0,cost:0,inputTokens:0,history:[],evidence:[],message:'Opening browser…'};
+    if(secrets) this.secrets.set(task.id,secrets.map((s,i)=>({...s,id:`s${i+1}`,origin:new URL(s.origin).origin})));
     this.tasks.set(task.id,task); await this.save(task); this.launch(task); return task;
   }
   private launch(task:TaskRecord) {
@@ -51,7 +53,7 @@ export class TaskManager extends EventEmitter {
         rememberObservation(task,snapshot,'before_decision');
         task.snapshot=snapshot;
         if(live.focus&&!snapshot.nodes.some(n=>n.id===live.focus)) {live.focus=undefined;live.index=0;}
-        task.projection=project(snapshot,live.focus,live.index,live.advanced);
+        task.projection=project(snapshot,live.focus,live.index,live.advanced,this.secrets.get(task.id)?.map(({id,label,origin})=>({id,label,origin})));
         task.message=`Choosing next step · ${snapshot.title || snapshot.url}`;
         await this.save(task);
         const decision=await this.provider.choose(task.projection,task,signal);
@@ -67,6 +69,10 @@ export class TaskManager extends EventEmitter {
           task.message=task.pending.context;break;
         }
         task.steps++;
+        if(a.op==='request_secret') {
+          task.status='needs_input';task.pending={kind:'secret',target:a.target,version:snapshot.version,context:`Private input needed for ${a.label}. Supply secrets in jev_resume if already provided by the user, or use the local dashboard/browser. Keep secret text out of ordinary values.`};
+          task.message=task.pending.context;this.log(task,a,snapshot,'waiting for private input',decision.confidence);break;
+        }
         if(a.op==='blocked') {task.status='needs_input';task.pending={kind:'blocked',context:'JEV cannot progress. Refine the goal, supply missing values, or inspect unsupported content.'};task.message=task.pending.context;this.log(task,a,snapshot,'blocked',decision.confidence);break;}
         if(a.op==='done') {
           // Re-observe: a model completion signal is never accepted on stale evidence.
@@ -95,6 +101,13 @@ export class TaskManager extends EventEmitter {
           this.log(task,a,snapshot,'observed content saved',decision.confidence);await this.save(task);continue;
         }
         let text:string|undefined;
+        if(a.op==='fill_secret') {
+          const secret=this.secrets.get(task.id)?.find(s=>s.id===a.argument);
+          const node=snapshot.nodes.find(n=>n.id===a.target);
+          const origin=new URL(snapshot.frames.find(f=>f.id===node?.frame)?.url||snapshot.url).origin;
+          if(!secret || secret.origin!==origin || !node?.states.sensitive) throw new Error('No supplied secret is authorized for this field origin.');
+          text=secret.text;
+        }
         if(a.op==='fill') {
           const chosen=await this.provider.text(task.projection,task,a,signal); task.requests++;this.account(task,chosen.usage);
           if(signal.aborted||task.status!=='running') break;
@@ -107,12 +120,12 @@ export class TaskManager extends EventEmitter {
         if(signal.aborted||task.status!=='running') break;
         task.message=a.label;
         // Persist intent first. A failure after browser input is uncertain and is never automatically retried.
-        const entry=this.log(task,a,snapshot,'executing',decision.confidence,text);await this.save(task);
+        const entry=this.log(task,a,snapshot,'executing',decision.confidence,a.op==='fill_secret'?undefined:text);await this.save(task);
         if(signal.aborted||task.status!=='running') {task.history.at(-1)!.outcome='paused before execution';break;}
         try { await live.browser.act(a,snapshot,text); }
         catch(error) {
           if(error instanceof StaleObservation) {task.history.at(-1)!.outcome='stale; not executed';await this.save(task);continue;}
-          task.history.at(-1)!.outcome='execution uncertain; inspect before resuming';throw error;
+          task.history.at(-1)!.outcome='execution uncertain; inspect before resuming';if(a.op==='fill_secret')throw new Error('Private input result is uncertain. Inspect before resuming.');throw error;
         }
         entry.outcome='executed';entry.context.enteredText=entry.context.requestedText;await this.save(task);
         const after=await live.browser.observe();task.snapshot=after;
@@ -128,38 +141,71 @@ export class TaskManager extends EventEmitter {
         // HTTP errors never include credentials, provider bodies or request state.
         task.pending={kind:'review',context:task.message};
       }
-    } finally {task.elapsedMs=previousElapsed+Date.now()-started;await this.save(task);}
+    } finally {if(task.status==='completed'||task.status==='cancelled')this.secrets.delete(task.id);task.elapsedMs=previousElapsed+Date.now()-started;await this.save(task);}
+  }
+  async fillSecret(id:string, target:string, secret:string) {
+    const task=this.get(id), live=this.live.get(id);
+    if(live?.promise) await live.promise;
+    if(!live?.opened || live.secretBusy || task.status!=='needs_input' || task.pending?.kind!=='secret'
+      || task.pending.target!==target || !task.snapshot || task.pending.version!==task.snapshot.version)
+      throw new Error('Private input request is no longer current. Inspect and resume the task.');
+    if(typeof secret!=='string'||!secret.length||secret.length>4000) throw new Error('Invalid private input.');
+    const snapshot=task.snapshot;
+    const node=snapshot.nodes.find(n=>n.id===target);
+    if(!node?.states.sensitive || !node.capabilities.includes('fill_secret')) throw new Error('This field does not accept private input.');
+    live.secretBusy=true;
+    const action={id:'private',op:'fill_secret',target,label:`Private input: ${node.name || node.role}`};
+    try {
+      const entry=this.log(task,action,snapshot,'executing private input');
+      await this.save(task);
+      try { await live.browser.act(action,snapshot,secret); }
+      catch(error) {
+        entry.outcome=error instanceof StaleObservation?'stale; not executed':'private input uncertain; inspect before continuing';
+        task.status='needs_review';task.message=entry.outcome;task.pending={kind:'review',context:task.message};
+        await this.save(task);
+        throw new Error('Private input stopped. Inspect the browser before resuming.');
+      }
+      entry.outcome='private input delivered';
+      task.status='paused';task.pending=undefined;task.message='Private input delivered. Resume when ready.';
+      await this.save(task);
+      return task;
+    } finally { live.secretBusy=false; }
   }
   async pause(id:string) {
     const task=this.get(id), live=this.live.get(id);
+    if(live?.secretBusy) throw new Error('Private input is in progress.');
     if(task.status!=='running') return task;
     task.status='paused';task.message='Paused. An interaction already in progress may finish.';live?.controller.abort();
     await live?.promise;await this.save(task);return task;
   }
-  async resume(id:string, patch:Partial<TaskInput>={}) {
+  async resume(id:string, patch:Partial<TaskRequest>={}) {
     const task=this.get(id);
+    if(this.live.get(id)?.secretBusy) throw new Error('Private input is in progress.');
     if(task.status==='running') throw new Error('Pause before updating a running task.');
     if(task.status==='cancelled') throw new Error('Cancelled tasks cannot be resumed; start a new task.');
     if(this.live.get(id)?.promise) await this.live.get(id)!.promise;
     if(patch.browser && patch.browser!==(task.input.browser||'isolated'))throw new Error('Start a new task to change browser connection mode.');
-    task.input=TaskInput.parse({...task.input,...patch});httpUrl(task.input.url);
+    const {secrets,...updates}=TaskRequest.partial().parse(patch);
+    task.input=TaskInput.parse({...task.input,...updates});httpUrl(task.input.url);
+    if(secrets) this.secrets.set(id,secrets.map((s,i)=>({...s,id:`s${i+1}`,origin:new URL(s.origin).origin})));
     task.pending=undefined;task.verification=undefined;task.status='running';task.message='Resuming…';
     await this.save(task);this.launch(task);return task;
   }
   async cancel(id:string) {
     await this.pause(id); const task=this.get(id),live=this.live.get(id);
-    await live?.browser.close();this.live.delete(id);
+    await live?.browser.close();this.live.delete(id);this.secrets.delete(id);
     task.status='cancelled';task.message='Cancelled. Task-owned browser tabs closed.';await this.save(task);return task;
   }
   async inspect(id:string, region?:string, index=0) {
     const task=this.get(id);
     const live=this.live.get(id);
+    if(live?.secretBusy) throw new Error('Private input is in progress.');
     if(task.status!=='running'&&live?.opened) {task.snapshot=await live.browser.observe();rememberObservation(task,task.snapshot,'inspection');await this.save(task);}
     if(!task.snapshot) throw new Error('No observation yet.');
-    return project(task.snapshot,region,index);
+    return project(task.snapshot,region,index,false,this.secrets.get(id)?.map(({id,label,origin})=>({id,label,origin})));
   }
   async shutdown() {
     for (const id of this.live.keys()) {await this.pause(id);await this.live.get(id)?.browser.close();}
-    this.live.clear();
+    this.live.clear();this.secrets.clear();
   }
 }

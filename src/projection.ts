@@ -1,4 +1,4 @@
-import type { Snapshot, Projection, Action, UINode, TaskInput } from './schema.js';
+import type { Snapshot, Projection, Action, UINode, TaskInput, SecretDescriptor } from './schema.js';
 
 export function descendants(nodes: UINode[], root: string): UINode[] {
   const ids = new Set([root]);
@@ -6,7 +6,7 @@ export function descendants(nodes: UINode[], root: string): UINode[] {
   for (const n of nodes) if (n.parent && ids.has(n.parent)) ids.add(n.id);
   return nodes.filter(n => ids.has(n.id));
 }
-export function project(snapshot: Snapshot, focus?: string, index = 0, advanced = false): Projection {
+export function project(snapshot: Snapshot, focus?: string, index = 0, advanced = false, secrets: SecretDescriptor[] = []): Projection {
   const scope = focus ? descendants(snapshot.nodes, focus) : snapshot.nodes;
   // Keep layout wrappers as ancestor context, without spending a decision on each empty wrapper.
   const all = scope.filter(n=>n.source!=='layout'||n.capabilities.length||n.name||n.text||n.id===focus);
@@ -28,6 +28,12 @@ export function project(snapshot: Snapshot, focus?: string, index = 0, advanced 
     if (!n.inViewport && n.capabilities.length) { add('reveal',`Scroll to ${label}`,n.id); continue; }
     if (n.obscured && n.capabilities.length) continue;
     for (const op of n.capabilities) {
+      if (op === 'fill_secret' && (!n.states.filled || advanced)) {
+        let origin='';try{origin=new URL(snapshot.frames.find(f=>f.id===n.frame)?.url||snapshot.url).origin;}catch{}
+        const available=secrets.filter(secret=>secret.origin===origin);
+        if(available.length) for(const secret of available) add('fill_secret',`Fill ${label} using supplied secret: ${secret.label}`,n.id,secret.id);
+        else add('request_secret', `Request private local input for ${label}; never use ordinary field values`, n.id);
+      }
       if (op === 'select') {
         if (focusedSelect?.id === n.id) {
           for (const o of (n.options ?? []).slice(index*pageSize,(index+1)*pageSize))
@@ -37,7 +43,7 @@ export function project(snapshot: Snapshot, focus?: string, index = 0, advanced 
       if (op === 'fill' || (op === 'click' && (advanced || !n.capabilities.some(c=>['fill','select','set_checked'].includes(c))))) add(op,`${op}: ${label}`,n.id);
       if (op === 'hover' && advanced) add(op,`${op}: ${label}`,n.id);
       if (op === 'set_checked') add(op,`${n.states.checked === true ? 'Uncheck' : 'Check'} ${label}`,n.id,String(n.states.checked !== true));
-      if (op === 'press') for (const key of advanced ? ['Enter','Escape','ArrowDown','ArrowUp','Tab'] : n.capabilities.includes('fill') && n.value ? ['Enter'] : []) add(op,`Press ${key} on ${label}`,n.id,key);
+      if (op === 'press') for (const key of advanced ? ['Enter','Escape','ArrowDown','ArrowUp','Tab'] : ((n.capabilities.includes('fill') && n.value) || (n.states.sensitive && n.states.filled)) ? ['Enter'] : []) add(op,`Press ${key} on ${label}`,n.id,key);
       if (op === 'scroll' && n.scroll) {
         const s = n.scroll;
         for (const [d,possible] of [['down',s.y<s.maxY-2],['up',s.y>0],['right',s.x<s.maxX-2],['left',s.x>0]] as const)

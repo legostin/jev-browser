@@ -17,13 +17,20 @@ export const TaskInput = z.object({
   headless: z.boolean().default(false)
 }).strict();
 export type TaskInput = z.infer<typeof TaskInput>;
+// Values are accepted only at the request boundary, never as part of a persisted TaskRecord.
+export const SecretInput = z.object({label:z.string().min(1).max(200),text:z.string().min(1).max(4000),
+  origin:z.string().url().refine(value=>{try{const u=new URL(value);return ['https:','http:'].includes(u.protocol)&&!u.username&&!u.password&&u.pathname==='/'&&!u.search&&!u.hash;}catch{return false;}},'Use an exact HTTP(S) origin')}).strict();
+export const TaskRequest = TaskInput.extend({secrets:z.array(SecretInput).max(20).optional()});
+export type TaskRequest = z.infer<typeof TaskRequest>;
+export interface SecretDescriptor { id:string; label:string; origin:string }
+
 
 export interface UINode {
   id: string; parent: string | null; frame: string; role: string; name: string; text: string;
   tag: string; source: 'semantic' | 'layout';
-  value?: string; href?: string;
+  value?: string; href?: string; inputType?: string; autocomplete?: string;
   states: { disabled: boolean; readonly: boolean; checked?: boolean | 'mixed'; expanded?: boolean;
-    selected?: boolean; required?: boolean; invalid?: boolean; sensitive?: boolean; busy?: boolean };
+    selected?: boolean; required?: boolean; invalid?: boolean; sensitive?: boolean; filled?: boolean; busy?: boolean };
   relations: Record<string, string[]>;
   bounds: { x: number; y: number; width: number; height: number };
   inViewport: boolean; obscured: boolean;
@@ -81,7 +88,7 @@ export interface TaskRecord {
     outcome: string; confidence?: number | null; at: string; context?:StepContext }[];
   browserMemory?:BrowserMemory;
   evidence: Evidence[]; snapshot?: Snapshot; projection?: Projection;
-  message: string; pending?: { kind: 'text' | 'review' | 'blocked'; target?: string; context: string };
+  message: string; pending?: { kind: 'text' | 'secret' | 'review' | 'blocked'; target?: string; version?: string; context: string };
   lastDecision?: { action: Action; confidence: number | null; threshold: number;
     alternatives: { action: Action; probability: number }[] };
   verification?: { passed: boolean; checks: { check: string; passed: boolean }[] };

@@ -2,10 +2,12 @@ import { computeAccessibleName, computeAccessibleDescription, getRole } from 'do
 import type { UINode } from './schema.js';
 
 // All facts are read from the browser. No site rules, model calls or generated selectors.
-interface Registry { document: string; next: number; ids: WeakMap<Element, string>; refs: Map<string, Element> }
+interface Registry { document: string; next: number; ids: WeakMap<Element, string>; refs: Map<string, Element>; sensitive: WeakSet<Element> }
 const scope = window as unknown as { __jevUIv1?: Registry };
 function registry(): Registry {
-  return scope.__jevUIv1 ??= { document: crypto.randomUUID(), next: 0, ids: new WeakMap(), refs: new Map() };
+  const state = scope.__jevUIv1 ??= { document: crypto.randomUUID(), next: 0, ids: new WeakMap(), refs: new Map(), sensitive: new WeakSet() };
+  state.sensitive ??= new WeakSet();
+  return state;
 }
 export function identify(element: Element): string {
   const r = registry();
@@ -61,16 +63,20 @@ export function collect(frame: string, limit = 4000) {
     let nextParent = parent;
     if (meaningful) {
       const id = identify(e); nextParent = id;
-      const sensitive = e.matches('input[type="password"],input[autocomplete^="cc-"],input[autocomplete="one-time-code"],input[type="file"]');
+      const autocomplete = (e.getAttribute('autocomplete') || '').toLowerCase().split(/\s+/);
+      const sensitive = r.sensitive.has(e) || e.matches('input[type="password"],input[type="file"]')
+        || autocomplete.some(token => ['current-password','new-password','one-time-code'].includes(token) || token.startsWith('cc-'));
+      if (sensitive) r.sensitive.add(e); // Keep masking when a password visibility toggle changes type to text.
       const disabled = e.matches(':disabled') || inherited(e, '[inert],[aria-disabled="true"]');
       const readonly = !!input.readOnly || e.getAttribute('aria-readonly') === 'true';
-      const role = root ? 'document' : isFrame ? 'frame' : isCanvas ? 'opaque' : nativeRole || (layoutGroup || scrollable ? 'group' : 'text');
+      const role = root ? 'document' : isFrame ? 'frame' : isCanvas ? 'opaque' : nativeRole || (editable ? 'textbox' : layoutGroup || scrollable ? 'group' : 'text');
       let name = '';
       try { name = clean(computeAccessibleName(e), 400); } catch { /* Partial semantics remain explicit. */ }
       if (!name && e.matches('input,textarea')) name = clean(e.getAttribute('placeholder'), 400);
       const states: UINode['states'] = { disabled, readonly, sensitive, required: !!input.required,
         invalid: e.getAttribute('aria-invalid') === 'true' || (input.validity ? !input.validity.valid : false),
         busy: e.getAttribute('aria-busy') === 'true' };
+      if (sensitive && editable) states.filled = !!input.value;
       if (e.matches('input[type="checkbox"],input[type="radio"]')) states.checked = input.indeterminate ? 'mixed' : input.checked;
       else if (e.hasAttribute('aria-checked')) states.checked = e.getAttribute('aria-checked') === 'mixed' ? 'mixed' : e.getAttribute('aria-checked') === 'true';
       for (const key of ['expanded', 'selected'] as const) if (e.hasAttribute(`aria-${key}`)) states[key] = e.getAttribute(`aria-${key}`) === 'true';
@@ -88,6 +94,10 @@ export function collect(frame: string, limit = 4000) {
       const hit = (e.getRootNode() as Document | ShadowRoot).elementFromPoint?.(x, y);
       const obscured = inViewport && !!hit && hit !== e && !e.contains(hit) && !hit.contains(e);
       const capabilities: string[] = [];
+      if (!disabled && sensitive && editable && rect.width > 0 && rect.height > 0) {
+        if (!readonly) capabilities.push('fill_secret');
+        if (states.filled) capabilities.push('press');
+      }
       if (!disabled && !sensitive && rect.width > 0 && rect.height > 0) {
         if (actionable && !e.matches('select')) capabilities.push('click', 'hover');
         if (editable && !readonly) capabilities.push('fill');
@@ -96,9 +106,10 @@ export function collect(frame: string, limit = 4000) {
         if (actionable) capabilities.push('press');
       }
       const node: UINode = { id, parent, frame, tag: e.tagName.toLowerCase(), role, name,
-        text: sensitive ? '' : directText, source: nativeRole || root ? 'semantic' : 'layout', states, relations,
+        text: sensitive ? '' : directText, source: nativeRole || root || editable ? 'semantic' : 'layout', states, relations,
         bounds: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) },
         inViewport, obscured, capabilities };
+      if (e instanceof HTMLInputElement) { node.inputType = input.type; node.autocomplete = autocomplete.join(' ') || undefined; }
       try { const d = clean(computeAccessibleDescription(e), 400); if (d) node.text = clean(`${node.text} ${d}`); } catch { /* Optional description. */ }
       if (!sensitive && ('value' in e || h.isContentEditable)) node.value = clean('value' in e ? String(input.value) : h.innerText, 2000);
       if (e instanceof HTMLAnchorElement && /^https?:/.test(e.href)) node.href = e.href;
