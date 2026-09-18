@@ -150,7 +150,7 @@ Missing tools in a session cannot be fixed by silently launching another browser
 
 The `chrome-extension/` directory contains JEV Browser Companion (Manifest V3, Chrome 125+). It uses your regular Chrome session, including existing sign-ins. Code builds the page structure; Playwright handles navigation and frames through a local `chrome.debugger` bridge.
 
-1. Install JEV with the command above. In Chrome, open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select `~/.local/share/jev-browser/runtime/current/chrome-extension`.
+1. Install JEV with the command above. In Chrome, open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select `~/.local/share/jev-browser/runtime/chrome-extension`.
 2. Ask Codex or Claude Code to perform your browser task. The extension connects automatically. No connection URL or token needs to be copied.
 
 The task's `url` selects an existing exact page first, then an existing tab on the same origin. If neither exists, JEV opens one tab. Continuations reuse the current task and tab. Unrelated tabs are searched locally by URL for selection; their page contents are not collected. The side panel offers an optional manual tab selection and an advanced manual connection override for development.

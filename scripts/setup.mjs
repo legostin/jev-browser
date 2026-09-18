@@ -65,6 +65,6 @@ await withLock(root, async () => {
     for (const link of linksCreated) await rm(link, { force: true });
     throw error;
   }
-  console.log(`\nJEV установлен: MCP + навык (${clients.join(', ')}), автоматическое подключение Chrome.\nАвтообновление: ${(await json(join(root, 'settings.json'))).autoUpdate ? 'включено' : 'выключено'}.\nКоманды: ${bin} status | update | configure\nChrome: ${join(root, 'current/chrome-extension')}\nПерезапустите подключение MCP.`);
+  console.log(`\nJEV установлен: MCP + навык (${clients.join(', ')}), автоматическое подключение Chrome.\nАвтообновление: ${(await json(join(root, 'settings.json'))).autoUpdate ? 'включено' : 'выключено'}.\nКоманды: ${bin} status | update | configure\nChrome: ${join(root, 'chrome-extension')}\nПерезапустите подключение MCP.`);
   if (!existsSync(config) && !process.env.OPENROUTER_API_KEY) console.log(`\nДобавьте ключ с помощью ${bin} configure (скрытый ввод).`);
 });

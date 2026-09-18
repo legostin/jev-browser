@@ -150,3 +150,11 @@ test('native host installer uses a stable executable and allows only the bundled
   const key=JSON.parse(await readFile('chrome-extension/manifest.json','utf8')).key;
   assert.equal(result.origin,`chrome-extension://${extensionId(key)}/`);
 });
+
+test('extension files follow releases in a real stable folder, including rollback',async t=>{
+  const root=await fixture(t),a=join(root,'releases',revA),b=join(root,'releases',revB);
+  for(const [dir,v] of [[a,'1'],[b,'2']]){await mkdir(join(dir,'chrome-extension'),{recursive:true});await writeFile(join(dir,'chrome-extension/manifest.json'),JSON.stringify({version:v}));}
+  await activate(root,b,revB);assert.equal((await json(join(root,'chrome-extension/manifest.json'))).version,'2');
+  assert.equal(await realpath(join(root,'chrome-extension')),join(root,'chrome-extension'));
+  await activate(root,a,revA);assert.equal((await json(join(root,'chrome-extension/manifest.json'))).version,'1');
+});

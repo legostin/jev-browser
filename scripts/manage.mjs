@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile, rename, symlink, realpath, rm, mkdtemp } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rename, symlink, realpath, rm, mkdtemp, cp } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -91,6 +91,8 @@ export async function stage(root, source, revision, dependencies = { run, smoke 
 }
 export async function activate(root, release, revision) {
   const state = await json(join(root, 'state.json'), {});
+  // Chrome's folder picker resolves symlinks. Give the extension a real stable folder.
+  if(existsSync(join(release,'chrome-extension/manifest.json')))await cp(join(release,'chrome-extension'),join(root,'chrome-extension'),{recursive:true});
   await pointCurrent(root, release);
   await atomicJSON(join(root, 'state.json'), { revision, previous: state.revision === revision ? state.previous : state.revision, updatedAt: Date.now() });
 }
@@ -158,7 +160,7 @@ export async function main(root, args) {
   }
   if (command === 'status') {
     console.log(JSON.stringify({ ...await json(join(root, 'state.json')), ...await json(join(root, 'settings.json')),
-      update: await json(join(root, 'update-status.json')), chromeExtension: join(root, 'current/chrome-extension') }, null, 2)); return;
+      update: await json(join(root, 'update-status.json')), chromeExtension: join(root, 'chrome-extension') }, null, 2)); return;
   }
   if (command === 'auto-update' && ['on', 'off'].includes(value)) {
     await withLock(root, async () => {
