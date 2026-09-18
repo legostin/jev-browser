@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 const Tab=z.object({id:z.number().int().nonnegative(),url:z.string().max(8000),title:z.string().max(1000),owned:z.boolean().default(false)});
 type Tab=z.infer<typeof Tab>;
-type Session={tabId:number;id:string;info:any;children:Set<string>;frameTree:Promise<void>;frameTreeReady:()=>void};
+type Session={tabId:number;id:string;targetId:string;info:any;children:Set<string>;frameTree:Promise<void>;frameTreeReady:()=>void};
 
 /** A single explicitly shared Chrome tab (plus its popups), never a browser-wide endpoint. */
 export class ExtensionBridge {
@@ -98,10 +98,17 @@ export class ExtensionBridge {
     const promise=(async()=>{
       await this.rpc('attach',{tabId});
       const {targetInfo}=await this.rpc('command',{tabId,method:'Target.getTargetInfo'});
+      // Chrome can retain a page target after replacing its root document (e.g. prerender).
+      // Playwright keys its main-frame session by targetId, so expose the actual root
+      // frame as the page identity. Commands still route through the authorized tabId.
+      const {frameTree:initialTree}=await this.rpc('command',{tabId,method:'Page.getFrameTree'});
+      if(!initialTree?.frame?.id)throw new Error('Chrome did not return a main frame.');
       if(this.socket!==socket||!this.ready)throw new Error('Chrome connection changed during attachment.');
       let frameTreeReady!:()=>void;const frameTree=new Promise<void>(r=>frameTreeReady=r);
-      const s:Session={tabId,id:`jev-${++this.sequence}`,info:targetInfo,children:new Set(),frameTree,frameTreeReady};this.sessions.set(tabId,s);
-      this.emit({method:'Target.attachedToTarget',params:{sessionId:s.id,targetInfo:{...targetInfo,attached:true},waitingForDebugger:false}});return s;
+      const opener=[...this.sessions.values()].find(s=>s.targetId===targetInfo.openerId);
+      const info={...targetInfo,targetId:initialTree.frame.id,...(opener?{openerId:opener.info.targetId}:{})};
+      const s:Session={tabId,id:`jev-${++this.sequence}`,targetId:targetInfo.targetId,info,children:new Set(),frameTree,frameTreeReady};this.sessions.set(tabId,s);
+      this.emit({method:'Target.attachedToTarget',params:{sessionId:s.id,targetInfo:{...info,attached:true},waitingForDebugger:false}});return s;
     })();
     this.attaching.set(tabId,promise);try{return await promise;}finally{this.attaching.delete(tabId);}
   }

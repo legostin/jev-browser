@@ -45,8 +45,9 @@ test('real Chrome extension shares a selected tab, executes across navigation an
   try{
     ctx=await chromium.launchPersistentContext(join(dir,'profile'),{channel:'chromium',headless:true,args:[`--disable-extensions-except=${extension}`,`--load-extension=${extension}`]});
     const worker=ctx.serviceWorkers()[0]||await ctx.waitForEvent('serviceworker');
-    // Chrome may deliver Runtime events before an earlier getFrameTree reply reaches the bridge.
-    await worker.evaluate(()=>{const api=(globalThis as any).chrome.debugger,send=api.sendCommand.bind(api);let first=true;api.sendCommand=async(...args:any[])=>{const result=await send(...args);if(args[1]==='Page.getFrameTree'&&first){first=false;await new Promise(r=>setTimeout(r,300));}return result;};});
+    // Reproduce a retained Chrome page target whose ID differs from its root frame,
+    // plus Runtime events overtaking Playwright's frame-tree initialization response.
+    await worker.evaluate(()=>{const api=(globalThis as any).chrome.debugger,send=api.sendCommand.bind(api);let trees=0;api.sendCommand=async(...args:any[])=>{const result=await send(...args);if(args[1]==='Target.getTargetInfo'){result.targetInfo.targetId='retained-'+result.targetInfo.targetId;if(result.targetInfo.openerId)result.targetInfo.openerId='retained-'+result.targetInfo.openerId;}if(args[1]==='Page.getFrameTree'&&++trees===2)await new Promise(r=>setTimeout(r,300));return result;};});
     const selected=await ctx.newPage();await selected.goto(url);
     const unrelated=await ctx.newPage();await unrelated.goto(url+'/private');
     const extensionId=new URL(worker.url()).host;
