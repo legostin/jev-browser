@@ -1,7 +1,6 @@
 {
-  "name": "jev-browser",
+  "name": "@legostin/jev-browser",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -33,5 +32,25 @@
   },
   "files": [
     "bin/"
-  ]
+  ],
+  "description": "Install and run JEV Browser for Codex: persistent browser sessions, deterministic page structure, and autonomous workflows.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/legostin/jev-browser.git"
+  },
+  "homepage": "https://github.com/legostin/jev-browser#readme",
+  "bugs": {
+    "url": "https://github.com/legostin/jev-browser/issues"
+  },
+  "keywords": [
+    "codex",
+    "mcp",
+    "jev",
+    "browser-automation",
+    "browser-use"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
 }

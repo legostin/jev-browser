@@ -13,20 +13,26 @@ A Codex plugin for completing browser tasks autonomously. You provide a goal; JE
 Install the MCP server and skill with one command:
 
 ```sh
-npx --yes 'git+https://github.com/legostin/jev-browser.git#main' install
+npx --yes @legostin/jev-browser@latest install
 ```
 
 Start the shared dashboard after installation:
 
 ```sh
-npx --yes 'git+https://github.com/legostin/jev-browser.git#main' start
+npx --yes @legostin/jev-browser@latest start
 ```
 
 With no arguments, the command runs `start`. Other commands include `configure`, `doctor`, `status`, `update`, `service status|stop|restart`, and `mcp`. Repeated launches use the same persistent service. `install` explicitly registers the tools with Codex; a normal launch does not register anything. MCP uses a stable local launcher, so clearing the npm cache does not break the installation. The Chrome extension still requires manual setup; see below.
 
 The repository is **public**. Installing over HTTPS does not require a GitHub account or authentication. npm runs the binary from the Git package according to the [npm exec rules](https://docs.npmjs.com/cli/npm-exec/).
 
-The package has not been published to the npm registry, so the short command `npx jev-browser` is **not available for this project yet**. That requires a separate publication and a decision about access. For now, use the GitHub address. The `install` command installs the latest `main`; the Git address fetches the installer. This installation method does not require publishing to npm.
+Use the scoped package [@legostin/jev-browser](https://www.npmjs.com/package/@legostin/jev-browser). The unscoped name `jev-browser` belongs to a different project; do not use `npx jev-browser` to install this one. The npm package provides the installer and launcher. The `install` command fetches and installs the latest engine from this repository's `main` branch.
+
+You can also run the installer directly from GitHub:
+
+```sh
+npx --yes 'git+https://github.com/legostin/jev-browser.git#main' install
+```
 
 ### Alternative: GitHub CLI
 
