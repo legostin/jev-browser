@@ -1,0 +1,19 @@
+{
+  "mcpServers": {
+    "jev-browser": {
+      "command": "node",
+      "args": [
+        "scripts/mcp-launcher.mjs"
+      ],
+      "cwd": ".",
+      "env_vars": [
+        "OPENROUTER_API_KEY",
+        "JEV_MODEL",
+        "JEV_DATA_DIR",
+        "JEV_BROWSER_CHANNEL",
+        "JEV_CDP_URL",
+        "JEV_CONFIG_FILE"
+      ]
+    }
+  }
+}

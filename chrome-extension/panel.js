@@ -1,0 +1,7 @@
+const $=id=>document.getElementById(id);
+async function tabs(){const list=(await chrome.tabs.query({currentWindow:true})).filter(t=>/^https?:\/\//.test(t.url||''));$('tab').replaceChildren(...list.map(t=>{const o=document.createElement('option');o.value=t.id;o.textContent=t.title||t.url;o.selected=t.active;return o;}));}
+async function status(){const s=await chrome.runtime.sendMessage({type:'status'});$('status').textContent=s.connected?'Подключено к Codex':s.connecting?'Подключаем…':'Не подключено';$('description').textContent=s.connected?`JEV управляет выбранной вкладкой и её дочерними вкладками. Всего: ${s.tabs.length}.`:'Выберите вкладку, которой JEV сможет управлять из Codex.';$('connect').hidden=s.connected;$('live').hidden=!s.connected;$('submit').disabled=s.connecting;$('error').textContent=s.error||'';if(s.tabs?.[0]){$('title').textContent=s.tabs[0].title;$('url').textContent=s.tabs[0].url;}}
+$('refresh').onclick=()=>tabs();
+$('connect').onsubmit=async e=>{e.preventDefault();const r=await chrome.runtime.sendMessage({type:'connect',link:$('link').value.trim(),tabId:Number($('tab').value)});if(r.error)$('error').textContent=r.error;else await status();};
+$('disconnect').onclick=async()=>{await chrome.runtime.sendMessage({type:'disconnect'});await status();await tabs();};
+const saved=await chrome.storage.session.get('lastLink');$('link').value=saved.lastLink||'';await tabs();await status();setInterval(status,1500);

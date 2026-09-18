@@ -1,0 +1,14 @@
+{
+  "goal": "Search for Toyota Camry 2026 in Almaty. Open relevant listings and save their observed information and links. Do not contact sellers or submit requests. Return at least three distinct relevant listings if available; otherwise explain the shortfall.",
+  "url": "https://www.google.com/",
+  "values": [
+    { "label": "Search query", "text": "Toyota Camry 2026 Алматы купить" },
+    { "label": "Make", "text": "Toyota" },
+    { "label": "Model", "text": "Camry" },
+    { "label": "Year", "text": "2026" },
+    { "label": "City", "text": "Алматы" }
+  ],
+  "checks": [],
+  "maxSteps": 80,
+  "maxSeconds": 600
+}

@@ -1,0 +1,25 @@
+import { cp,readFile,writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { basename,join,resolve } from 'node:path';
+import { homedir } from 'node:os';
+const source=resolve('.'),target=join(homedir(),'plugins','jev-browser');
+const skill=join(homedir(),'.codex','skills','.system','plugin-creator','scripts');
+const marketplace=execFileSync('python3',[join(skill,'read_marketplace_name.py')],{encoding:'utf8'}).trim();
+if(!/^[A-Za-z0-9_-]+$/.test(marketplace))throw new Error('Invalid marketplace name.');
+const targetManifest=JSON.parse(await readFile(join(target,'.codex-plugin','plugin.json'),'utf8'));
+if(targetManifest.name!=='jev-browser')throw new Error('Unexpected personal plugin source.');
+const oldConfig=JSON.parse(await readFile(join(target,'.mcp.json'),'utf8'));
+const newConfig=JSON.parse(await readFile(join(source,'.mcp.json'),'utf8'));
+newConfig.mcpServers['jev-browser'].env={...newConfig.mcpServers['jev-browser'].env,...oldConfig.mcpServers['jev-browser'].env};
+const installedConfig=JSON.stringify(newConfig,null,2)+'\n';
+if(!existsSync(join(source,'dist','src','mcp.js')))throw new Error('Build first.');
+await cp(source,target,{recursive:true,filter:path=>{
+  const name=basename(path);if(['artifacts','.git','.mcp.json'].includes(name))return false;
+  return (name!=='.env'&&!name.startsWith('.env.'))||name==='.env.example';
+}});
+await writeFile(join(target,'.mcp.json'),installedConfig);
+execFileSync('python3',[join(skill,'update_plugin_cachebuster.py'),target],{stdio:'inherit'});
+execFileSync('codex',['plugin','add',`jev-browser@${marketplace}`],{stdio:'inherit'});
+await cp(join(target,'.codex-plugin','plugin.json'),join(source,'.codex-plugin','plugin.json'));
+console.log('Updated. Start a new Codex task to load the new tools and skill.');

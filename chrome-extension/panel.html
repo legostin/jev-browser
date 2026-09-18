@@ -1,0 +1,6 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>JEV Browser</title><link rel="stylesheet" href="panel.css"><body>
+<header><span class="mark">J</span><div><h1>JEV Browser</h1><small>Твой браузер. Одна цель. Цепочка действий.</small></div></header>
+<section><p id="status" role="status">Не подключено</p><p id="description">Выберите вкладку, которой JEV сможет управлять из Codex.</p></section>
+<form id="connect"><label>Ссылка подключения из Codex<input id="link" type="password" placeholder="http://127.0.0.1:…/#…" required autocomplete="off"></label><label>Вкладка<select id="tab" required></select></label><button type="button" id="refresh">Обновить список</button><button class="primary" id="submit">Подключить вкладку</button></form>
+<section id="live" hidden><strong id="title"></strong><p id="url"></p><button id="disconnect">Отключить управление</button></section>
+<p id="error" role="alert"></p><footer>Ключ модели хранится в плагине Codex. Расширение передаёт структуру выбранной страницы и выполняет действия. Вкладка остаётся открытой после отключения.</footer><script src="panel.js" type="module"></script></body></html>

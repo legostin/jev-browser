@@ -1,0 +1,13 @@
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join,resolve } from 'node:path';
+const root=join(homedir(),'plugins','jev-browser');
+const launcher=join(root,'scripts','mcp-launcher.mjs');
+if(!existsSync(launcher))throw new Error('Install/update the personal plugin first.');
+const configFile=resolve('.env');
+const args=['mcp','add','jev-browser'];
+if(existsSync(configFile))args.push('--env',`JEV_CONFIG_FILE=${configFile}`);
+args.push('--',process.execPath,launcher);
+execFileSync('codex',args,{stdio:'inherit'});
+console.log('Registered the stable personal JEV source as a direct MCP server. Restart MCP or use a new Codex task.');

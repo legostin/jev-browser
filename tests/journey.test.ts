@@ -1,0 +1,40 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { TaskInput, type TaskRecord, type Snapshot } from '../src/schema.js';
+import { actionContext, beginBrowserSession, journeyContext, rememberActionResult, rememberObservation } from '../src/journey.js';
+const task=()=>({input:TaskInput.parse({goal:'Find a car',url:'https://example.test'}),history:[],evidence:[]} as unknown as TaskRecord);
+const snapshot=(pageId='tab-1',url='https://example.test/search'):Snapshot=>({version:url,observedAt:new Date().toISOString(),pageId,url,title:url,tabs:[{id:pageId,url,title:url,active:true}],nodes:[],frames:[],limitations:[]});
+test('plugin memory links action, source, destination and popup visits; session restarts never reuse tab identities',()=>{
+  const t=task();beginBrowserSession(t);const first=snapshot();rememberObservation(t,first,'before_decision');
+  const a={id:'a1',op:'click',label:'Open Camry'};
+  const entry={step:1,...a,at:'now',outcome:'executed',url:first.url,version:first.version,context:actionContext(t,a,first)};t.history.push(entry);
+  const popup={id:'tab-2',url:'https://example.test/car',title:'Camry',active:false};
+  const after={...first,tabs:[...first.tabs,popup]};rememberActionResult(t,a,first,after,entry);
+  assert.deepEqual(entry.context.observed?.openedTabs,['t2']);assert.equal(t.browserMemory!.tabs[1].visited,false);
+  const switched={...snapshot(popup.id,popup.url),tabs:[{...first.tabs[0],active:false},{...popup,active:true}]};
+  const switchAction={id:'a2',op:'switch_tab',label:'Switch to Camry',argument:popup.id};
+  const switchEntry={step:2,...switchAction,at:'now',outcome:'executed',url:first.url,version:first.version,context:actionContext(t,switchAction,after)};t.history.push(switchEntry);
+  rememberActionResult(t,switchAction,after,switched,switchEntry);
+  const c=journeyContext(t);assert.equal(c.current?.tab,'t2');assert.equal(c.recentSteps[1].from?.tab,'t1');assert.equal(c.recentSteps[1].to?.tab,'t2');
+  assert.equal(c.tabs.find(x=>x.id==='t2')?.visited,true);assert.equal(c.tabs.find(x=>x.id==='t1')?.lastAction?.op,'switch_tab');
+  beginBrowserSession(t);rememberObservation(t,first,'before_decision');assert.equal(t.browserMemory?.current?.tab,'t3');
+  assert.equal(t.browserMemory?.tabs.find(x=>x.id==='t1')?.open,false);
+});
+test('field memory contains actual before/after observations and masks sensitive input',()=>{
+  const t=task();beginBrowserSession(t);const before=snapshot();
+  const field:any={id:'field',role:'textbox',name:'Search',frame:'f',value:'',states:{sensitive:false}};before.nodes=[field];
+  rememberObservation(t,before,'before_decision');
+  const a={id:'a',op:'fill',label:'Fill search',target:'field'};
+  const entry={step:1,...a,at:'now',outcome:'executed',url:before.url,version:'v',context:actionContext(t,a,before,'Toyota Camry')};t.history.push(entry);
+  rememberActionResult(t,a,before,{...before,version:'changed',nodes:[{...field,value:'Toyota Camry'}]},entry);
+  assert.equal(entry.context.enteredText,'Toyota Camry');assert.equal(entry.context.observed?.field?.after,'Toyota Camry');
+  field.states.sensitive=true;field.value='private-password';
+  assert.ok(!JSON.stringify(actionContext(t,a,before,'private-password')).includes('private-password'));
+});
+test('context preserves uncertain outcomes, supports old records and states coverage when compacted',()=>{
+  const t=task();beginBrowserSession(t);rememberObservation(t,snapshot(),'before_decision');
+  t.history=Array.from({length:100},(_,i)=>({step:i+1,op:'click',label:'Кнопка'.repeat(150),outcome:'execution uncertain; inspect before resuming',url:'https://example.test/'+i,version:'v',at:'now'}));
+  const c=journeyContext(t);assert.equal(c.recentSteps.at(-1)?.step,100);assert.match(c.recentSteps.at(-1)!.outcome,/uncertain/);
+  assert.ok(Buffer.byteLength(JSON.stringify(c))<=14000);assert.equal(c.coverage.totalSteps,100);assert.ok(c.coverage.includedSteps<100);
+  assert.doesNotThrow(()=>journeyContext({...t,browserMemory:undefined}));
+});

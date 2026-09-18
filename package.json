@@ -1,0 +1,29 @@
+{
+  "name": "jev-browser",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "tsc --noEmit",
+    "test": "npm run build && node --test --test-concurrency=1 dist/tests/*.test.js",
+    "start": "node dist/src/cli.js",
+    "mcp": "node dist/src/mcp.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "dom-accessibility-api": "^0.7.1",
+    "playwright": "1.63.0",
+    "ws": "^8.21.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "@types/ws": "^8.18.1",
+    "esbuild": "^0.25.12",
+    "typescript": "^5.9.3"
+  }
+}
