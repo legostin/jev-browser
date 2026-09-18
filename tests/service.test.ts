@@ -34,14 +34,15 @@ test('concurrent MCP clients share one daemon; reconnect preserves live page and
   const fixture=createServer((req,res)=>{if(req.url==='/state'){res.end(edit?'after reconnect':'initial');return;}if(req.url==='/favicon.ico'){res.writeHead(204);res.end();return;}visits++;res.setHeader('Content-Type','text/html');res.end('<label>Live value<input id="live"></label><script>setInterval(async()=>{document.querySelector("input").value=await (await fetch("/state")).text()},100)</script>');});
   await new Promise<void>(r=>fixture.listen(0,'127.0.0.1',r));const url=`http://127.0.0.1:${(fixture.address() as any).port}`;
   const clients:Client[]=[];let service:any;
-  async function connect(session:string){const client=new Client({name:'daemon-test',version:'1.0.0'});clients.push(client);await client.connect(new StdioClientTransport({command:process.execPath,args:[fileURLToPath(new URL('../src/mcp.js',import.meta.url))],env:{...Object.fromEntries(Object.entries(process.env).filter((x):x is [string,string]=>typeof x[1]==='string')),JEV_DATA_DIR:dir,JEV_EPHEMERAL:'0',JEV_SESSION_ID:session,JEV_CONFIG_FILE:join(dir,'no-config'),OPENROUTER_API_KEY:'',JEV_CDP_URL:'',JEV_AUTO_UPDATE:'0'}}));return client;}
+  async function connect(session:string){const client=new Client({name:'daemon-test',version:'1.0.0'});clients.push(client);await client.connect(new StdioClientTransport({command:process.execPath,args:[fileURLToPath(new URL('../src/mcp.js',import.meta.url))],env:{...Object.fromEntries(Object.entries(process.env).filter((x):x is [string,string]=>typeof x[1]==='string')),JEV_DATA_DIR:dir,JEV_EPHEMERAL:'0',JEV_SESSION_ID:session,JEV_CONFIG_FILE:join(dir,'no-config'),OPENROUTER_API_KEY:'',JEV_CDP_URL:'',JEV_MIN_CONFIDENCE:session==='alpha'?'0.55':'0.9',JEV_AUTO_UPDATE:'0'}}));return client;}
   async function call(c:Client,name:string,args:any={}){const reply=await c.callTool({name,arguments:args});if(reply.isError)throw new Error((reply.content as any)[0].text);return JSON.parse((reply.content as any)[0].text);}
   try {
     const [a,b]=await Promise.all([connect('alpha'),connect('beta')]);
     const [sa,sb]=await Promise.all([call(a,'jev_status'),call(b,'jev_status')]);assert.equal(sa.service.pid,sb.service.pid);assert.equal(sa.dashboard,sb.dashboard);
     service=JSON.parse(await readFile(join(dir,'service/endpoint.json'),'utf8'));assert.equal((await stat(join(dir,'service/endpoint.json'))).mode&0o777,0o600);
     const rpcURL=new URL('/internal/rpc',service.url);assert.equal((await fetch(rpcURL,{method:'POST',headers:{'x-jev-token':new URL(service.url).hash.slice(1),'Content-Type':'application/json'},body:'{}'})).status,403);
-    const task=await call(a,'jev_run',{goal:'Inspect form',url,browser:'isolated',headless:true,waitMs:25000});assert.equal(task.status,'needs_review');
+    const taskClient=sa.defaults.minConfidence===0.55?b:a;
+    const task=await call(taskClient,'jev_run',{sessionId:'alpha',goal:'Inspect form',url,browser:'isolated',headless:true,waitMs:25000});assert.equal(task.status,'needs_review');assert.equal(task.minConfidence,sa.defaults.minConfidence);
     const before=await call(a,'jev_inspect',{id:task.id});assert.ok(before.nodes.some((n:any)=>n.name==='Live value'));
     await a.close();edit=true;
     const next=await connect('alpha');const reconnected=await call(next,'jev_status');assert.equal(reconnected.service.pid,sa.service.pid);assert.equal(reconnected.currentTaskId,task.id);

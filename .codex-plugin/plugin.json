@@ -1,6 +1,6 @@
 {
   "name": "jev-browser",
-  "version": "0.1.0+codex.20260918121611",
+  "version": "0.1.0+codex.20260918121931",
   "description": "Autonomous browser tasks powered by JEV with deterministic interface observation, saved evidence and resumable execution.",
   "author": {
     "name": "legostin"

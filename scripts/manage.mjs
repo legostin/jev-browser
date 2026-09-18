@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile, rename, symlink, realpath, rm, mkdtemp } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { randomUUID } from 'node:crypto';
 const repository = 'https://github.com/legostin/jev-browser.git';
@@ -178,7 +178,8 @@ export async function main(root, args) {
   });
   if (['doctor', 'serve', 'service', 'run'].includes(command)) {
     const release = await realpath(join(root, 'current'));
-    execFileSync(process.execPath, [join(release, 'dist/src/cli.js'), ...args], {cwd:release,stdio:'inherit'}); return;
+    const forwarded=command==='run'&&value?[command,resolve(value),...args.slice(2)]:args;
+    execFileSync(process.execPath, [join(release, 'dist/src/cli.js'), ...forwarded], {cwd:release,stdio:'inherit'}); return;
   }
   throw new Error('Команды: status, configure, confidence 0..1, update, auto-update on|off, rollback, doctor, serve, service start|status|stop|restart');
 }
