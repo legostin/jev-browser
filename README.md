@@ -1,258 +1,255 @@
 # JEV Browser
 
-Плагин Codex для самостоятельного выполнения браузерных задач. Вы задаёте цель; JEV выбирает последовательность действий, исполнитель взаимодействует с браузером, а плагин сохраняет ход работы и найденные данные.
+A Codex plugin for completing browser tasks autonomously. You provide a goal; JEV chooses a sequence of actions, the executor interacts with the browser, and the plugin records progress and findings.
 
-**Структуру интерфейса собирает код. LLM для этого не используется.**
+**Code builds the interface structure. No LLM is used for collection.**
 
-## Установка одной командой
+## One-command installation
 
-**macOS / Linux.** Нужны Node.js 22+, npm, Git, Codex CLI (`codex` в PATH) и Google Chrome. Установщик проверит инструменты до изменений. Windows пока не поддерживается.
+**macOS / Linux.** Requires Node.js 22+, npm, Git, Codex CLI (`codex` in your PATH), and Google Chrome. The installer checks these tools before making changes. Windows is not supported yet.
 
-### Через npx
+### Using npx
 
-Установка MCP и навыка одной командой:
+Install the MCP server and skill with one command:
 
 ```sh
 npx --yes 'git+https://github.com/legostin/jev-browser.git#main' install
 ```
 
-Запуск общей панели после установки:
+Start the shared dashboard after installation:
 
 ```sh
 npx --yes 'git+https://github.com/legostin/jev-browser.git#main' start
 ```
 
-Без аргумента выполняется `start`. Доступны также `configure`, `doctor`, `status`, `update`, `service status|stop|restart` и `mcp`. Повторный запуск использует тот же постоянный сервис. `install` явно подключает инструменты к Codex; обычный запуск сам ничего не регистрирует. MCP регистрируется через стабильный локальный launcher, поэтому очистка кэша npm не ломает установку. Расширение Chrome по-прежнему подключается вручную — см. ниже.
+With no arguments, the command runs `start`. Other commands include `configure`, `doctor`, `status`, `update`, `service status|stop|restart`, and `mcp`. Repeated launches use the same persistent service. `install` explicitly registers the tools with Codex; a normal launch does not register anything. MCP uses a stable local launcher, so clearing the npm cache does not break the installation. The Chrome extension still requires manual setup; see below.
 
-Репозиторий **приватный**: для самого скачивания `npx` нужен доступ Git к GitHub по HTTPS. Если используете GitHub CLI, один раз выполните `gh auth login` и `gh auth setup-git`. SSH-альтернатива при настроенном ключе: `npx --yes 'git+ssh://git@github.com/legostin/jev-browser.git#main' install`. npm запускает бинарник из Git-пакета по [правилам npm exec](https://docs.npmjs.com/cli/npm-exec/).
+The repository is **public**. Installing over HTTPS does not require a GitHub account or authentication. npm runs the binary from the Git package according to the [npm exec rules](https://docs.npmjs.com/cli/npm-exec/).
 
-Пакет в npm registry пока не опубликован, поэтому короткая команда `npx jev-browser` **ещё недоступна**. Она потребует отдельной публикации и выбранной модели доступа. Сейчас используется адрес GitHub. Команда `install` устанавливает актуальный `main`; Git-адрес загружает только установщик. Публикация npm не нужна для этого способа.
+The package has not been published to the npm registry, so the short command `npx jev-browser` is **not available for this project yet**. That requires a separate publication and a decision about access. For now, use the GitHub address. The `install` command installs the latest `main`; the Git address fetches the installer. This installation method does not require publishing to npm.
 
-### Альтернатива через GitHub CLI
+### Alternative: GitHub CLI
 
-Для пользователей с доступом и авторизованным GitHub CLI (`gh auth login`):
+If you already use an authenticated GitHub CLI (`gh auth login`):
 
 ```sh
 bash -o pipefail -c 'gh api -H "Accept: application/vnd.github.raw+json" repos/legostin/jev-browser/contents/install.sh?ref=main | bash'
 ```
 
-Команда получает проект, устанавливает зависимости по lock-файлу, собирает его, проверяет запуск MCP и основные инструменты, регистрирует сервер через `codex mcp add` и добавляет навык Codex. Повторный запуск безопасен для настроек и ключа. Доступ к приватному репозиторию требуется также для обновлений.
+The command fetches the project, installs dependencies from the lockfile, builds it, checks MCP startup and the core tools, registers the server through `codex mcp add`, and adds the Codex skill. Running it again preserves your settings and key. Updates require network access to GitHub and npm.
 
-Это установка **MCP + навыка**, без зависимости от внутренних служебных навыков Codex и без изменения персонального marketplace. Карточка плагина в каталоге этим способом не добавляется. Репозиторий сохраняет стандартный manifest плагина для отдельного распространения через marketplace.
+This installs **MCP + a skill**, without depending on internal Codex utility skills or changing your personal marketplace. It does not add a plugin card to the catalog. The repository retains a standard plugin manifest for separate distribution through a marketplace.
 
-После публикации репозитория будет доступен публичный вариант (сейчас без доступа вернёт ошибку):
+You can also install with `curl`, without GitHub CLI or authentication:
 
 ```sh
 bash -o pipefail -c 'curl -fsSL https://raw.githubusercontent.com/legostin/jev-browser/main/install.sh | bash'
 ```
 
-При первом запуске сохраните свой ключ OpenRouter — **ввод скрыт**, ключ не попадает в командную строку:
+On first use, save your OpenRouter key. **Input is hidden**, and the key does not appear in the command line:
 
 ```sh
 ~/.local/bin/jev configure
 ```
 
-Если ключ уже находится в стандартном файле настроек или старой установке JEV, установщик сохраняет/переносит его. Начните **новую задачу Codex** или перезапустите MCP. Затем:
+If the key already exists in the standard configuration file or an older JEV installation, the installer preserves or migrates it. Start a **new Codex task** or restart MCP. Then ask:
 
-> Используй JEV Browser: найди Toyota Camry 2026 в Алматы, собери предложения со ссылками и ценами. Не связывайся с продавцами.
+> Use JEV Browser to find a 2026 Toyota Camry in Almaty. Collect listings with links and prices. Do not contact sellers.
 
-По умолчанию JEV работает в **вашем Chrome**: подключите расширение по инструкции ниже. Без подключения он вернёт инструкцию, а не откроет отдельное окно. Отдельный браузер доступен только при явном выборе режима `isolated`.
+By default, JEV uses **your Chrome browser**: connect the extension as described below. Without a connection, it returns setup instructions instead of opening a separate window. A separate browser is available only when you explicitly select `isolated` mode.
 
-### Автообновление
+### Automatic updates
 
-Включено по умолчанию. При запуске MCP проверка запускается **в фоне, не чаще раза в сутки**. Канал обновлений — `main` этого репозитория. Скачивание, зависимости, сборка, проверка типов и MCP-проверка выполняются в отдельной папке. Только готовая версия становится текущей. Если GitHub/npm недоступны или проверка провалилась, сохраняется работающая версия; следующая автоматическая попытка — через сутки при запуске MCP.
+Enabled by default. When MCP starts, it checks for updates **in the background, at most once a day**. The update channel is this repository's `main` branch. Downloading, dependency installation, building, type checking, and MCP validation run in a separate directory. Only a validated release becomes current. If GitHub/npm is unavailable or validation fails, the working release remains active. The next automatic attempt occurs on an MCP launch after another day has elapsed.
 
-Браузером владеет постоянный локальный сервис. Он продолжает работать на прежней версии после обновления пакета или переподключения MCP. Чтобы применить новый движок, завершите или приостановите задачи и выполните `jev service restart`. Перезапуск сервиса освобождает браузерные подключения и очищает секреты в памяти; подключите расширение снова. Новый навык подхватывается новой задачей Codex. Ранее установленные версии сохраняются для работающих процессов и отката.
+A persistent local service owns the browser. It keeps running its existing version after a package update or MCP reconnection. To apply a new engine version, complete or pause your tasks and run `jev service restart`. Restarting the service releases browser connections and clears secrets held in memory; reconnect the extension afterward. A new Codex task picks up the updated skill. Previously installed releases remain available for running processes and rollback.
 
 ```sh
-~/.local/bin/jev status             # Версия, результат последней проверки, папка расширения
-~/.local/bin/jev update             # Проверить и установить сейчас
-~/.local/bin/jev auto-update off    # Выключить
-~/.local/bin/jev auto-update on     # Включить
-~/.local/bin/jev rollback           # Предыдущая версия; также выключает автообновление
-~/.local/bin/jev doctor             # Проверить настройку
-~/.local/bin/jev serve              # Ссылка на общую панель; терминал можно закрыть
-~/.local/bin/jev service status     # PID и версия работающего сервиса
-~/.local/bin/jev service stop       # Остановить после завершения/паузы задач
-~/.local/bin/jev service restart    # Применить новый движок или настройки
+~/.local/bin/jev status             # Version, last update result, extension directory
+~/.local/bin/jev update             # Check and install now
+~/.local/bin/jev auto-update off    # Disable automatic updates
+~/.local/bin/jev auto-update on     # Enable automatic updates
+~/.local/bin/jev rollback           # Previous release; also disables automatic updates
+~/.local/bin/jev doctor             # Check configuration
+~/.local/bin/jev serve              # Shared dashboard link; the terminal can be closed
+~/.local/bin/jev service status     # Running service PID and release
+~/.local/bin/jev service stop       # Stop after completing or pausing tasks
+~/.local/bin/jev service restart    # Apply a new engine version or configuration
 ```
 
-Если `~/.local/bin` в PATH, команды можно писать как `jev update`. Переменная `JEV_AUTO_UPDATE=0` отключает автоматическую проверку для конкретного запуска. Диагностика обновления: `~/.local/share/jev-browser/runtime/update.log`; краткий результат доступен через `jev status`. При переносе/удалении Node.js повторите установку, чтобы обновить путь MCP.
+If `~/.local/bin` is in your PATH, you can use commands such as `jev update`. Set `JEV_AUTO_UPDATE=0` to disable automatic checks for a particular launch. Update diagnostics are stored in `~/.local/share/jev-browser/runtime/update.log`; `jev status` shows a brief result. If you move or remove Node.js, run the installer again to update the MCP executable path.
 
-Файлы:
+Files:
 
-| Что | Где |
+| Purpose | Location |
 |---|---|
-| Ключ и настройки | `~/.config/jev-browser/.env` (права 0600) |
-| Версии и журнал обновлений | `~/.local/share/jev-browser/runtime/` |
-| Стабильная текущая версия | `~/.local/share/jev-browser/runtime/current` |
-| Навык Codex | `~/.agents/skills/jev-browser` — ссылка на текущую версию |
-| Команда | `~/.local/bin/jev` |
-| Задачи и находки | `~/.local/share/jev-browser/` |
+| Key and configuration | `~/.config/jev-browser/.env` (0600 permissions) |
+| Releases and update log | `~/.local/share/jev-browser/runtime/` |
+| Stable current release | `~/.local/share/jev-browser/runtime/current` |
+| Codex skill | `~/.agents/skills/jev-browser` — symlink to the current release |
+| Command | `~/.local/bin/jev` |
+| Tasks and findings | `~/.local/share/jev-browser/` |
 
-Обновление не копирует локальные `.env`, журналы и задачи в пакет. Ключ не передаётся расширению и не записывается в конфигурацию Codex: там хранится только путь к приватному файлу. Приоритет настроек: окружение → `.env` запущенного проекта → файл `JEV_CONFIG_FILE` или `~/.config/jev-browser/.env`.
+Updates do not copy local `.env` files, logs, or tasks into the package. The key is never sent to the extension or written into the Codex configuration; that configuration stores only the path to the private file. Configuration precedence: environment → the running project's `.env` → `JEV_CONFIG_FILE` or `~/.config/jev-browser/.env`.
 
-### Запуск из исходников
+### Running from source
 
 ```sh
 npm ci --ignore-scripts
 npm run build
 npm start
-# Установить текущий КОММИТ в Codex (незакоммиченные изменения не включаются):
+# Install the current COMMIT into Codex (uncommitted changes are excluded):
 npm run setup
 ```
 
-Откройте локальную ссылку из терминала. Она содержит токен доступа — не публикуйте её. По умолчанию используется подключённая вкладка Chrome. Отдельный контекст создаётся только при явном выборе `browser: "isolated"`. Для Chromium: `npx playwright install chromium` и `JEV_BROWSER_CHANNEL=chromium`. Подключение через явно настроенный локальный `JEV_CDP_URL` также поддерживается; remote debugging автоматически не включается.
+Open the local link printed in the terminal. It contains an access token; do not publish it. The connected Chrome tab is used by default. A separate context is created only when you explicitly select `browser: "isolated"`. For Chromium, run `npx playwright install chromium` and set `JEV_BROWSER_CHANNEL=chromium`. An explicitly configured local `JEV_CDP_URL` is also supported; remote debugging is not enabled automatically.
 
-## Инструменты Codex
+## Codex tools
 
-Инструменты:
-
-| Инструмент | Назначение |
+| Tool | Purpose |
 |---|---|
-| `jev_run` | Запустить или продолжить текущую задачу; дождаться события до 25 секунд |
-| `jev_wait` | Получить уточнение/результат сразу при появлении, без периодического опроса |
-| `jev_task` | Узнать прогресс, получить находки и запросы уточнения |
-| `jev_inspect` | Читать структуру интерфейса по областям и страницам |
-| `jev_pause` | Приостановить после текущего незавершённого взаимодействия |
-| `jev_resume` | Продолжить, изменить цель, значения или ограничения |
-| `jev_cancel` | Остановить и закрыть принадлежащие задаче вкладки |
-| `jev_status` | Проверить настройку и открыть панель |
+| `jev_run` | Start or continue the current task; wait up to 25 seconds for an event |
+| `jev_wait` | Receive a clarification request or result as soon as it appears, without periodic polling |
+| `jev_task` | Read progress, findings, and clarification requests |
+| `jev_inspect` | Read interface structure by region and slice |
+| `jev_pause` | Pause after the current in-flight interaction settles |
+| `jev_resume` | Resume or update the goal, values, or limits |
+| `jev_cancel` | Stop and close task-owned tabs |
+| `jev_status` | Check configuration and get the dashboard link |
 
-## Прямое подключение MCP
+## Direct MCP connection
 
-Новая установка уже регистрирует MCP напрямую. Если инструменты не появились, перезапустите MCP в настройках Codex и начните новую задачу. Проверьте `~/.local/bin/jev doctor` и `codex mcp get jev-browser`. Повторная команда установки восстанавливает регистрацию.
+A new installation registers MCP directly. If the tools do not appear, restart MCP in Codex settings and start a new task. Check `~/.local/bin/jev doctor` and `codex mcp get jev-browser`. Running the installer again restores registration.
 
-Для диагностики инвентаря самого Codex без обращения к модели:
+To inspect Codex's tool inventory without calling a model:
 
 ```sh
 node ~/.local/share/jev-browser/runtime/current/scripts/check-codex-mcp.mjs
 ```
 
-Подключение использует абсолютный путь Node.js и стабильный launcher. Возможности настройки описаны в [документации MCP](https://learn.chatgpt.com/docs/extend/mcp?surface=cli).
+The connection uses an absolute Node.js path and a stable launcher. Configuration options are described in the [MCP documentation](https://learn.chatgpt.com/docs/extend/mcp?surface=cli).
 
-Отсутствие инструментов в конкретной сессии нельзя исправить скрытым запуском другого браузера: его вкладка и ссылка подключения будут другими.
+Missing tools in a session cannot be fixed by silently launching another browser: its tab and connection link would be different.
 
-## Расширение для обычного Chrome
+## Extension for your regular Chrome browser
 
-Папка `chrome-extension/` содержит JEV Browser Companion (Manifest V3, Chrome 125+). Оно подключает выбранную пользователем вкладку с существующей авторизацией к тому же движку. Структуру по-прежнему строит код; переключение страниц и фреймы обрабатывает Playwright через локальный мост `chrome.debugger`.
+The `chrome-extension/` directory contains JEV Browser Companion (Manifest V3, Chrome 125+). It connects a user-selected tab, including its existing signed-in session, to the same engine. Code still builds the structure; Playwright handles navigation and frames through a local `chrome.debugger` bridge.
 
-1. В Chrome откройте `chrome://extensions`, включите «Режим разработчика», нажмите «Загрузить распакованное расширение» и выберите `~/.local/share/jev-browser/runtime/current/chrome-extension` (для запуска из исходников — `chrome-extension` внутри проекта).
-2. В новой задаче Codex попросите ссылку подключения JEV (`jev_status` → `dashboard`). Или запустите `npm start` и скопируйте ссылку подключения из локальной панели. Подключайтесь к тому процессу, из которого будете запускать задачу: у каждого процесса собственная ссылка.
-3. Нажмите значок JEV в Chrome. В боковой панели вставьте полную ссылку, выберите вкладку и нажмите «Подключить вкладку».
-4. Попросите Codex выполнить задачу **в подключённом Chrome**. Он передаст `browser: "extension"`, план, значения и проверки. В локальной панели можно выбрать тот же режим в поле «Где выполнять?».
+1. In Chrome, open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select `~/.local/share/jev-browser/runtime/current/chrome-extension`. When running from source, select the project's `chrome-extension` directory.
+2. In a new Codex task, ask for the JEV connection link (`jev_status` → `dashboard`). Alternatively, run `npm start` and copy the connection link from the local dashboard. Use the link for the service that will run your task.
+3. Click the JEV icon in Chrome. Paste the full link into the side panel, select a tab, and click **Connect tab**.
+4. Ask Codex to perform the task **in the connected Chrome browser**. It will pass `browser: "extension"`, a plan, values, and checks. You can select the same mode in the local dashboard's browser selection field.
 
-Режим расширения начинает работу на текущей выбранной странице; поле `url` в этом режиме справочное. Переходы выполняются в ходе задачи. Отключение прекращает доступ, но сохраняет пользовательскую вкладку. Одно подключение обслуживает одну задачу одновременно. Уточнения и новые этапы продолжают ту же задачу и вкладку. После завершения явно новая запись задачи может использовать ту же браузерную сессию. Отмена/отключение освобождает соединение; после этого вкладку нужно подключить снова. Дополнительно доступны только дочерние вкладки, открытые выбранной страницей (до 8 вкладок в группе).
+Extension mode starts on the selected tab's current page; the `url` field is informational in this mode. Navigation happens as part of the task. Disconnecting revokes access but preserves the user's tab. One connection serves one task at a time. Clarifications and subsequent stages continue in the same task and tab. After completion, an explicitly new task record can reuse the same browser session. Cancellation or disconnection releases the connection; the tab must then be shared again. Only child tabs opened by the selected page are additionally accessible, with up to 8 tabs in the group.
 
-Расширение использует разрешения `debugger`, `tabs`, `sidePanel`, `storage`, `webNavigation`. Последнее связывает дочернюю вкладку с исходной даже для ссылок без `opener`. Chrome показывает индикатор отладки. Открытие DevTools или отключение отладки может разорвать соединение; задача остановится для проверки, действие не повторяется автоматически. Мост слушает только loopback, проверяет origin расширения и приватный токен; обычная веб-страница не может подключиться. Ключ OpenRouter в расширение не передаётся. Токен подключения хранится только на время браузерной сессии.
+The extension uses the `debugger`, `tabs`, `sidePanel`, `storage`, and `webNavigation` permissions. The last one associates child tabs with their source even for links without an `opener`. Chrome displays a debugging indicator. Opening DevTools or disconnecting debugging may interrupt the connection; the task stops for review, and the action is not replayed automatically. The bridge listens only on loopback and validates the extension origin and private token; ordinary web pages cannot connect. The OpenRouter key is never sent to the extension. The connection token is stored only for the browser session.
 
-Установка расширения в личный профиль выполняется через интерфейс Chrome. После обновления JEV нажмите **Reload / Обновить** у расширения на `chrome://extensions` и подключите вкладку снова. Файлы расширения обновляются вместе с движком, но загруженное расширение не перезагружается посреди вашей задачи. Пока расширение не опубликовано в Chrome Web Store, автоматическую установку и обновление через магазин проект не предоставляет; ограничения распространения описаны в [документации Chrome](https://developer.chrome.com/docs/extensions/how-to/distribute/install-extensions).
+Installing the extension in your personal profile requires the Chrome UI. After updating JEV, click **Reload** for the extension at `chrome://extensions` and reconnect the tab. Extension files update with the engine, but the loaded extension is not reloaded in the middle of a task. Until the extension is published in the Chrome Web Store, the project does not provide automatic installation or updates through the store. Distribution restrictions are described in the [Chrome documentation](https://developer.chrome.com/docs/extensions/how-to/distribute/install-extensions).
 
-## Постоянный сервис и продолжение без новых окон
+## Persistent service and continuation without new windows
 
-При первом обращении MCP автоматически запускает один локальный сервис. Все MCP-клиенты и `jev serve` используют его общую панель и соединение Chrome. Закрытие терминала или отключение MCP не останавливает задачи и не закрывает браузер. Сервис работает до `jev service stop`, перезапуска компьютера или сбоя; системный автозапуск пока не устанавливается. Служебный endpoint и отдельный RPC-токен хранятся с правами 0600 в `service/` внутри `JEV_DATA_DIR`.
+The first MCP request automatically starts a single local service. All MCP clients and `jev serve` use its shared dashboard and Chrome connection. Closing the terminal or disconnecting MCP does not stop tasks or close the browser. The service runs until `jev service stop`, a computer restart, or a crash; system startup integration is not installed yet. The service endpoint and a separate RPC token are stored with 0600 permissions in `service/` under `JEV_DATA_DIR`.
 
-`jev_status` возвращает `sessionId` и `currentTaskId` данной беседы. Все восемь инструментов принимают необязательный `sessionId`: сохраните его и передайте после переподключения вместе с прежним ID задачи. Если окружение предоставляет `JEV_SESSION_ID` или `CODEX_THREAD_ID`, идентификатор берётся оттуда; иначе он создаётся на подключение. Навык явно требует продолжать прежний sessionId, а не начинать новую задачу. Это разделение рабочих процессов одного пользователя, не граница безопасности между разными пользователями. Чужую беседу нельзя продолжить случайно; осознанное совместное продолжение возможно с её sessionId.
+`jev_status` returns the conversation's `sessionId` and `currentTaskId`. All eight tools accept an optional `sessionId`: keep it and pass it after reconnecting, along with the existing task ID. If the environment provides `JEV_SESSION_ID` or `CODEX_THREAD_ID`, that value is used; otherwise, an ID is generated per connection. The skill explicitly requires continuing with the previous sessionId instead of starting a replacement task. This separates one user's workflows; it is not a security boundary between different users. A conversation cannot accidentally continue another conversation's task. Deliberate shared continuation is possible using its sessionId.
 
-`jev_run` по умолчанию продолжает текущую задачу: повторный вызов для работающего задания возвращает тот же ID, уточнённая цель продолжает существующую сессию. Для изменения работающего задания сначала `jev_pause`, затем `jev_resume`. `newTask: true` создаёт отдельную запись только по явному запросу; в режиме расширения после завершённой задачи она наследует подключённый браузер без нового окна. Создать конкурентную задачу в занятой вкладке нельзя.
+`jev_run` continues the current task by default: calling it again for a running task returns the same ID, while a refined goal continues the existing session. To change a running task, call `jev_pause`, then `jev_resume`. `newTask: true` creates a separate record only when explicitly requested. In extension mode, after the previous task completes, it inherits the connected browser without opening a new window. A competing task cannot be created in an occupied tab.
 
-`jev_run` и `jev_resume` держат вызов до 25 секунд и немедленно возвращают `needs_input`/`needs_review`, паузу или результат. Если работа ещё идёт, агент вызывает `jev_wait` с тем же ID (до 45 секунд). Ожидание подписано на события движка: уточнение возвращается сразу после сохранения состояния. Агент передаёт ответ через `jev_resume`, сохраняя вкладку и историю. Ответ содержит `attentionRequired`, `pending`, `nextTool` и ссылку на панель.
+`jev_run` and `jev_resume` hold the call for up to 25 seconds and immediately return on `needs_input`, `needs_review`, a pause, or a result. If work is still running, the agent calls `jev_wait` with the same ID for up to 45 seconds. The wait subscribes to engine events, so a clarification request is returned as soon as its state is saved. The agent supplies an answer through `jev_resume`, preserving the tab and history. The response includes `attentionRequired`, `pending`, `nextTool`, and a dashboard link.
 
-Это двусторонний обмен в активной цепочке инструментов. Плагин не может сам запустить уже завершённую/бездействующую беседу Codex. Поэтому навык требует продолжать `jev_wait` до результата или запроса данных. Переподключение MCP сохраняет живое состояние вкладок, значения форм и запросы уточнения. Перезапуск самого сервиса — отдельная операция, которая освобождает браузерное подключение.
+This is a two-way exchange within an active sequence of tool calls. The plugin cannot wake an ended or idle Codex conversation by itself. The skill therefore requires continuing with `jev_wait` until there is a result or a request for information. Reconnecting MCP preserves live tabs, form values, and pending clarification requests. Restarting the service itself is a separate operation that releases the browser connection.
 
-## Порог уверенности
+## Confidence threshold
 
-По умолчанию **0,55**. В панели порог задаётся при запуске в настройках задачи и меняется в блоке уточнения перед продолжением. В MCP используйте `minConfidence` в `jev_run` или `jev_resume.patch` (число от 0 до 1).
+The default is **0.55**. In the dashboard, set the threshold in task settings when starting, or change it in the clarification section before resuming. Through MCP, use `minConfidence` in `jev_run` or `jev_resume.patch`, with a value from 0 to 1.
 
 ```sh
 ~/.local/bin/jev confidence 0.65
 ```
 
-Команда сохраняет `JEV_MIN_CONFIDENCE` в приватном конфиге; после `jev service restart` это станет порогом **новых** задач. Уже созданные сохраняют свой порог. При меньшей уверенности JEV останавливается и возвращает агенту выбранное действие и альтернативы; сам порог не снижает. Отсутствующее значение уверенности всё равно требует проверки, даже при пороге 0.
+This saves `JEV_MIN_CONFIDENCE` in the private configuration file. After `jev service restart`, it becomes the threshold for **new** tasks. Existing tasks keep their own threshold. Below the threshold, JEV stops and returns the selected action and alternatives to the agent; it does not lower the threshold itself. Missing confidence still requires review, even with a threshold of 0.
 
-## Как устроено
+## How it works
 
 ```text
-Codex / локальная панель
-        ↓ цель, точные значения, условия результата
-TaskManager — состояние, история, лимиты, находки
+Codex / local dashboard
+        ↓ goal, exact values, outcome conditions
+TaskManager — state, history, limits, findings
         ↓
-BrowserAdapter → Collector → структурированный интерфейс
+BrowserAdapter → Collector → structured interface
         ↑                       ↓
-исполнитель ← JEV Decisions ← компактное представление
+executor ← JEV Decisions ← compact representation
         ↓
-новое наблюдение → проверка результата / следующий шаг
+fresh observation → outcome verification / next step
 ```
 
-Сборщик использует DOM, стандартные HTML/ARIA-роли и вычисление доступных названий через `dom-accessibility-api`. Это не полный снимок внутреннего accessibility tree браузера. Он сохраняет иерархию, связи подписей/описаний/полей, значения, состояния, положение, прокрутку и происхождение структурных групп. Фреймы читаются отдельно; открытые Shadow DOM обходятся рекурсивно. Нет правил для конкретных сайтов или бизнес-сущностей.
+The collector uses the DOM, standard HTML/ARIA roles, and accessible name computation through `dom-accessibility-api`. It is not a full snapshot of the browser's internal accessibility tree. It preserves hierarchy, label/description/field relationships, values, states, position, scrolling, and the origin of structural groups. Frames are read separately; open shadow roots are traversed recursively. There are no rules for specific websites or business entities.
 
-Полная наблюдаемая структура остаётся у исполнителя. JEV получает смысловые группы: формы, диалоги, карточки (`article`), элементы списков и строки таблиц. Подписи, поля, ошибки и кнопки одной группы передаются вместе; пустые промежуточные обёртки не разрывают группу. Диалоги и текущий фокус получают приоритет. Мягкий размер среза — 24 основных узла, целая группа может занимать до 64. Более крупные группы делятся с явной отметкой `complete: false` и счётчиками полноты. Родители и связанные узлы добавляются как контекст. Можно раскрыть область, перейти к следующему срезу или изучить варианты списка. Между решениями передаётся детерминированная сводка `changes`: переход, добавленные, удалённые и изменённые элементы (до 12 каждого вида со счётчиком общего числа). Большие native select читаются порциями. Лимит сбора — 4000 узлов и 20000 посещённых элементов на документ; превышение отражается в `limitations`.
+The executor retains the full observed structure. JEV receives semantic groups: forms, dialogs, cards (`article`), list items, and table rows. Labels, fields, errors, and buttons in a group are sent together; empty intermediate wrappers do not split the group. Dialogs and the current focus take priority. A slice has a soft limit of 24 primary nodes, while a whole group can contain up to 64. Larger groups are split with an explicit `complete: false` flag and coverage counts. Parents and related nodes are added as context. JEV can expand a region, read the next slice, or inspect list options. Between decisions, it receives a deterministic `changes` summary: navigation and added, removed, or changed elements, up to 12 of each type with total counts. Large native selects are read in batches. Collection is limited to 4,000 nodes and 20,000 visited elements per document; exceeding these limits is reported in `limitations`.
 
-ID привязан к живому DOM-элементу в конкретном документе. Перед действием исполнитель заново наблюдает страницу и проверяет цель: документ/фрейм, роль, имя, ссылку, тип и значение поля, состояния, связанные описания и окружающую форму/карточку. Постороннее обновление страницы не отменяет действие. Заменённый DOM-узел можно привязать заново только при единственном семантически эквивалентном элементе в эквивалентном контексте; подмена сохраняется в истории как `executionTarget`/`rebound`. Неоднозначность, изменение формы или перекрывающий диалог требуют нового наблюдения и решения. Playwright дополнительно проверяет возможность взаимодействия. Неопределённый результат действия останавливает выполнение для проверки; автоматического повтора мутации нет.
+Each ID is tied to a live DOM element in a specific document. Before acting, the executor observes the page again and validates the target: document/frame, role, name, link, field type and value, states, related descriptions, and the surrounding form or card. Unrelated page updates do not invalidate the action. A replaced DOM node can be rebound only when there is exactly one semantically equivalent element in equivalent context. The replacement is recorded in history as `executionTarget`/`rebound`. Ambiguity, a changed form, or an overlapping dialog requires a new observation and decision. Playwright also checks actionability. An uncertain action result stops execution for review; mutations are never automatically replayed.
 
-Codex готовит `plan` — короткие предполагаемые этапы — и `values` с точным текстом и назначением каждого поля. JEV видит их уже при выборе действия и адаптирует план к наблюдаемой странице. Текст вводится только из списка точных значений. Если значения отсутствуют, доступна исходная формулировка цели как возможный поисковый запрос. Если подходящего значения нет, задача возвращает `needs_input`. Второго API для генерации текста нет.
+Codex prepares a `plan` of short suggested stages and `values` containing exact text and each field's purpose. JEV sees them when selecting an action and adapts the plan to the observed page. Text is entered only from the exact-value list. If no values are supplied, the original goal wording is available as a possible search query. If no suitable value exists, the task returns `needs_input`. There is no second API for generating text.
 
-Модель получает компактные ссылки на узлы, без повторного списка действий и координат. Заполнение само фокусирует поле; клик по тому же редактируемому полю не конкурирует с ним в основном наборе. Дополнительные клики, наведение и клавиатурная навигация раскрываются через `inspect_controls`. Пустые служебные группы остаются контекстом родителей, а не отдельными кандидатами для каждого шага.
+The model receives compact node references, without a duplicated action list or coordinates. Filling a field focuses it automatically; clicking the same editable field does not compete with filling in the primary action set. Additional clicks, hovering, and keyboard navigation are exposed through `inspect_controls`. Empty utility groups remain parent context instead of becoming separate candidates for every step.
 
-При низкой уверенности `lastDecision` содержит выбранное действие, уверенность, порог и до пяти альтернатив с вероятностями. Проверьте их и уточните план или назначение значений перед продолжением; снижение порога не исправляет неоднозначность задания.
+When confidence is low, `lastDecision` includes the selected action, confidence, threshold, and up to five alternatives with probabilities. Review them and clarify the plan or value labels before continuing; lowering the threshold does not resolve an ambiguous task.
 
-## Пароли и коды
+## Passwords and codes
 
-Поля пароля распознаются как ввод: по `type=password` и стандартным подсказкам `autocomplete` (`current-password`, `new-password`, `one-time-code`, платёжные поля). Переключение «показать пароль» не снимает маскирование уже распознанного поля. JEV видит тип, назначение и факт заполнения, но не значение.
+Password fields are recognized as inputs through `type=password` and standard `autocomplete` hints such as `current-password`, `new-password`, `one-time-code`, and payment fields. Toggling “show password” does not remove masking from an already recognized field. JEV sees the type, purpose, and whether the field is filled, but not its value.
 
-Если пользователь уже передал пароль, Codex передаёт его отдельно в `secrets` при `jev_run` или в patch `jev_resume`:
+If the user has already supplied a password, Codex passes it separately in `secrets` for `jev_run` or in the `jev_resume` patch:
 
 ```json
-{"secrets":[{"label":"Пароль входа","text":"<явно переданный пароль>","origin":"https://example.com"}]}
+{"secrets":[{"label":"Login password","text":"<explicitly supplied password>","origin":"https://example.com"}]}
 ```
 
-JEV видит только подпись и выбирает `fill_secret`; исполнитель автоматически подставляет значение **без повторного запроса**. Значение хранится только в памяти процесса до завершения/отмены задачи или перезапуска; на паузе сохраняется. `origin` — точный разрешённый сайт, включая протокол и порт; секрет не предлагается для другого сайта или чужого фрейма. Новый список `secrets` заменяет предыдущий. Аргументы MCP могут оставаться в истории вызывающего Codex — локальная панель позволяет не передавать пароль через основной агент.
+JEV sees only the label and selects `fill_secret`; the executor inserts the value automatically **without asking again**. The value is held only in process memory until task completion, cancellation, or a service restart; it is retained while paused. `origin` is the exact authorized site, including scheme and port. The secret is not offered for another site or a frame with a different origin. A new `secrets` list replaces the previous one. MCP arguments may remain in the calling Codex conversation's history; the local dashboard lets users avoid passing passwords through the main agent.
 
-Если подходящего секрета нет, JEV предлагает `request_secret`, задача останавливается с `pending.kind=secret`. В локальной панели появляется скрытое поле **«Пароль или код»**. Кнопка «Заполнить и продолжить» передаёт значение непосредственно исполнителю через защищённый токеном локальный канал. Значение не проходит через MCP/LLM, не сохраняется в задаче и не добавляется в историю. Можно также ввести пароль в самом браузере и нажать «Продолжить».
+If no matching secret is available, JEV offers `request_secret`, and the task pauses with `pending.kind=secret`. A masked **Password or code** input appears in the local dashboard. The **Fill and continue** button sends the value directly to the executor through a token-protected local channel. The value does not pass through MCP or an LLM, is not saved in the task, and is not added to history. Users can also enter the password directly in the browser and click **Continue**.
 
-Не помещайте пароли в цель, `values`, план или проверки: эти обычные данные входят в модельный контекст. Необычное поле без корректной HTML-разметки может потребовать ручного ввода; распознавание не использует догадки модели.
+Do not put passwords in the goal, `values`, plan, or checks: those ordinary fields are included in the model context. An unusual field without appropriate HTML markup may require manual input; recognition does not rely on model guesses.
 
-## Результаты и продолжение
+## Findings and continuation
 
-Плагин сам поддерживает `browserContext` между шагами и передаёт его в каждый запрос JEV — выбор действия и выбор текста. В нём есть исходная и конечная страница, нажатый элемент и ссылка, введённое значение, наблюдаемое изменение поля, открытые/закрытые вкладки и переходы между ними. У каждой вкладки сохраняются адреса, факт посещения и последнее действие. Это программный журнал наблюдений без LLM-суммаризации; основной агент Codex не пересказывает историю.
+The plugin maintains `browserContext` between steps and includes it in every JEV request, for both action and text selection. It contains source and destination pages, the clicked element and link, entered text, observed field changes, opened/closed tabs, and navigation between them. Each tab retains its URLs, whether it was visited, and its last action. This is a programmatic observation log with no LLM summarization; the main Codex agent does not reconstruct the history.
 
-Память сохраняется вместе с задачей. Новая браузерная сессия получает новые идентификаторы вкладок даже при повторении внутренних ID браузера. Неисполненные и неопределённые действия сохраняют свой статус. В модель идут до 12 последних шагов, 24 вкладок и 8 переходов, затем более старые записи сокращаются до бюджета 14 КБ; `coverage` показывает полноту. Полная история действий остаётся в записи задачи, журнал переходов хранит последние 80 событий. Сведения о фоновых вкладках отражают последнее наблюдение. Секретные поля не добавляются в память ввода.
+Memory is persisted with the task. A new browser session receives new tab identifiers even if the browser's internal IDs repeat. Unexecuted and uncertain actions retain their status. The model receives up to 12 recent steps, 24 tabs, and 8 navigations; older entries are then trimmed to fit a 14 KB budget. `coverage` reports completeness. The full action history remains in the task record, while the navigation log retains the latest 80 events. Background-tab information reflects the last observation. Sensitive fields are excluded from input memory.
 
-`collect` сохраняет наблюдаемый фрагмент с URL, временем и версией страницы. Это данные сайта, а не автоматически подтверждённые факты. Сохраняемые находки доступны JEV и после переходов.
+`collect` saves an observed fragment with its URL, timestamp, and page version. This is website data, not automatically verified fact. Saved findings remain available to JEV after navigation.
 
-`done` от JEV запускает повторное наблюдение и независимые проверки: URL, текст, значение именованного поля или число сохранённых фрагментов. Статус `completed` означает прохождение **заданных проверок**. Их полноту относительно цели оценивает Codex. Число фрагментов не доказывает число разных товаров; наличие текста не доказывает применение фильтра. Без проверок завершение возвращается Codex как `needs_review`.
+A `done` decision from JEV triggers another observation and independent checks: URL, text, a named field's value, or the number of collected fragments. The `completed` status means the **configured checks** passed. Codex assesses whether those checks cover the goal. A fragment count does not prove the number of distinct products; visible text does not prove that a filter was applied. Without checks, proposed completion is returned to Codex as `needs_review`.
 
-История и снимки записываются атомарно в `~/.local/share/jev-browser` с ограниченными правами; путь меняется через `JEV_DATA_DIR`. Они могут содержать информацию со страниц. Переподключение MCP сохраняет живую браузерную сессию у сервиса. После остановки/сбоя самого сервиса история сохраняется, но соединение нужно открыть заново: isolated открывает последний URL, extension требует снова поделиться вкладкой Chrome. Восстановление прежнего состояния форм плагин не гарантирует. Пауза сохраняет вкладки и состояние форм. Лимиты шагов, запросов и времени накопительные; время проверяется между итерациями, текущий вызов может завершиться позже.
+History and snapshots are written atomically to `~/.local/share/jev-browser` with restricted permissions; set `JEV_DATA_DIR` to change the location. They may contain information from visited pages. Reconnecting MCP preserves the live browser session owned by the service. After the service itself stops or crashes, history remains, but the connection must be reopened: `isolated` opens the last URL, while `extension` requires sharing the Chrome tab again. The plugin does not guarantee restoration of previous form state. Pausing preserves tabs and form state. Step, request, and time limits are cumulative; time is checked between iterations, so an in-flight call may finish later.
 
-## Проверено
+## Validation
 
-- После добавления сервиса, проверки целей и смысловых групп: настоящий JEV выполнил локальную цепочку «поле → фильтр → поиск → сбор карточки → проверка» за **5 шагов, 6 запросов, 8,973 с, $0,000857304**. Отдельно проверено сохранение живой страницы при переподключении MCP и общий сервис для двух клиентов.
-- Поиск Toyota Camry с главной страницы русской Википедии настоящим JEV: переход на статью, проверки URL и текста — **5 шагов, 7 запросов, 8,768 с, $0,001822254**. Два шага безопасно отклонены как устаревшие до ввода. Это один прогон.
-- Настоящее расширение в отдельном Chromium: выбранная вкладка → ввод → переход → поле внутри фрейма → дочерняя вкладка → проверка результата; посторонние вкладки не подключаются, пользовательская вкладка сохраняется при отмене. Для этого теста используется детерминированный провайдер решений.
-
-- Локальные автоматические проверки: общий сервис для конкурентных MCP-клиентов, сохранение живой страницы после переподключения, разделение бесед, целые формы и частичное покрытие больших групп, безопасная перепривязка DOM-узла, формы, checkbox/select, фреймы, открытый Shadow DOM, вложенная прокрутка, новые вкладки, устаревшие решения, пауза во время запроса, отсутствие нужного текста, проверка завершения, MCP, доступ к панели и мобильная вёрстка.
-- Настоящий JEV через OpenRouter: локальная форма → ввод → фильтр → поиск → сохранение карточки → две независимые проверки. Зафиксированный прогон: **5 шагов, 6 запросов, 6,846 с, $0,002379048** по данным OpenRouter. Это один локальный сценарий, не оценка надёжности произвольных сайтов.
+- After adding the persistent service, target validation, and semantic groups, real JEV completed the local sequence “field → filter → search → collect card → verify” in **5 steps, 6 requests, 8.973 seconds, $0.000857304**. Live-page preservation across MCP reconnections and a shared service for two clients were tested separately.
+- Real JEV searched for Toyota Camry from the Russian Wikipedia home page, opened the article, and passed URL and text checks: **5 steps, 7 requests, 8.768 seconds, $0.001822254**. Two stale steps were safely rejected before input. This is a single run.
+- The real extension in a separate Chromium instance: selected tab → input → navigation → field inside a frame → child tab → outcome verification. Unrelated tabs are not attached, and cancellation preserves the user's tab. This test uses a deterministic decision provider.
+- Local automated checks cover a shared service for concurrent MCP clients, live-page preservation after reconnection, conversation separation, whole forms and partial coverage of large groups, safe DOM-node rebinding, forms, checkboxes/selects, frames, open shadow roots, nested scrolling, new tabs, stale decisions, pausing during a request, missing text, completion verification, MCP, dashboard access, and mobile layout.
+- Real JEV through OpenRouter: local form → input → filter → search → save card → two independent checks. Recorded run: **5 steps, 6 requests, 6.846 seconds, $0.002379048**, as reported by OpenRouter. This is one local scenario, not a reliability estimate for arbitrary websites.
 
 ```sh
 npm run check
 npm run test:installer
-npx playwright install chromium # Для теста расширения в отдельном профиле
+npx playwright install chromium # For the extension test in a separate profile
 npm test
-# Следующие команды делают платные запросы к модели:
+# The following commands make paid model requests:
 node scripts/probe.mjs
 node dist/scripts/live-smoke.js
 node dist/scripts/live-wikipedia.js
 ```
 
-## Границы первой версии
+## Initial release limitations
 
-- Браузерный адаптер; управление нативными приложениями ещё не реализовано.
-- Canvas и закрытый Shadow DOM не получают выдуманной структуры; недоступность отмечается явно. OCR и модельное распознавание изображений не используются.
-- Загрузка файлов, drag/drop и сложные нестандартные редакторы пока не поддержаны. Нативные JavaScript-диалоги отклоняются и отмечаются в наблюдении.
-- Нет гарантии работы на каждом сайте: доступность интерфейса, капчи, ограничения сайтов и полнота наблюдения влияют на результат.
-- JEV вызывается через alpha API OpenRouter Decisions. Изменение провайдером контракта может потребовать обновления адаптера.
-- Контроль актуальности защищает от устаревших целей, но не доказывает правильность намерения модели. Для действий с внешними последствиями цель должна явно отражать разрешённый пользователем объём работы.
+- Browser adapter only; native application control is not implemented yet.
+- Canvas and closed shadow roots are not assigned invented structure; their inaccessibility is reported explicitly. OCR and model-based image recognition are not used.
+- File uploads, drag-and-drop, and complex custom editors are not supported yet. Native JavaScript dialogs are dismissed and reported in the observation.
+- There is no guarantee of compatibility with every website. Interface accessibility, CAPTCHAs, site restrictions, and observation coverage affect results.
+- JEV is called through the alpha OpenRouter Decisions API. Provider contract changes may require an adapter update.
+- Freshness validation protects against stale targets but does not establish whether the model's intent is correct. For actions with external consequences, the goal must explicitly reflect the scope authorized by the user.
 
-Расширение использует официальные API [chrome.debugger](https://developer.chrome.com/docs/extensions/reference/api/debugger), [sidePanel](https://developer.chrome.com/docs/extensions/reference/api/sidePanel) и [webNavigation](https://developer.chrome.com/docs/extensions/reference/api/webNavigation).
+The extension uses the official [chrome.debugger](https://developer.chrome.com/docs/extensions/reference/api/debugger), [sidePanel](https://developer.chrome.com/docs/extensions/reference/api/sidePanel), and [webNavigation](https://developer.chrome.com/docs/extensions/reference/api/webNavigation) APIs.
 
-Источники: [JEV / TypeSafe](https://docs.typesafe.ai/concepts/system-one), [OpenRouter Decisions](https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-questions-and-answers-request), [jev-ultrafast](https://github.com/browser-use/jev-ultrafast). Последний изучен как архитектурный ориентир; код ядра этого проекта реализован отдельно.
+Sources: [JEV / TypeSafe](https://docs.typesafe.ai/concepts/system-one), [OpenRouter Decisions](https://openrouter.ai/docs/api/api-reference/alphadecisions/submit-a-decisions-questions-and-answers-request), and [jev-ultrafast](https://github.com/browser-use/jev-ultrafast). The last project was studied as an architectural reference; this project's core was implemented independently.
