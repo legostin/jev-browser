@@ -8,7 +8,29 @@
 
 **macOS / Linux.** Нужны Node.js 22+, npm, Git, Codex CLI (`codex` в PATH) и Google Chrome. Установщик проверит инструменты до изменений. Windows пока не поддерживается.
 
-Репозиторий сейчас **приватный**. Для пользователей с доступом и авторизованным GitHub CLI (`gh auth login`):
+### Через npx
+
+Установка MCP и навыка одной командой:
+
+```sh
+npx --yes 'git+https://github.com/legostin/jev-browser.git#main' install
+```
+
+Запуск общей панели после установки:
+
+```sh
+npx --yes 'git+https://github.com/legostin/jev-browser.git#main' start
+```
+
+Без аргумента выполняется `start`. Доступны также `configure`, `doctor`, `status`, `update`, `service status|stop|restart` и `mcp`. Повторный запуск использует тот же постоянный сервис. `install` явно подключает инструменты к Codex; обычный запуск сам ничего не регистрирует. MCP регистрируется через стабильный локальный launcher, поэтому очистка кэша npm не ломает установку. Расширение Chrome по-прежнему подключается вручную — см. ниже.
+
+Репозиторий **приватный**: для самого скачивания `npx` нужен доступ Git к GitHub по HTTPS. Если используете GitHub CLI, один раз выполните `gh auth login` и `gh auth setup-git`. SSH-альтернатива при настроенном ключе: `npx --yes 'git+ssh://git@github.com/legostin/jev-browser.git#main' install`. npm запускает бинарник из Git-пакета по [правилам npm exec](https://docs.npmjs.com/cli/npm-exec/).
+
+Пакет в npm registry пока не опубликован, поэтому короткая команда `npx jev-browser` **ещё недоступна**. Она потребует отдельной публикации и выбранной модели доступа. Сейчас используется адрес GitHub. Команда `install` устанавливает актуальный `main`; Git-адрес загружает только установщик. Публикация npm не нужна для этого способа.
+
+### Альтернатива через GitHub CLI
+
+Для пользователей с доступом и авторизованным GitHub CLI (`gh auth login`):
 
 ```sh
 bash -o pipefail -c 'gh api -H "Accept: application/vnd.github.raw+json" repos/legostin/jev-browser/contents/install.sh?ref=main | bash'
