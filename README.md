@@ -1,12 +1,12 @@
 # JEV Browser
 
-A Codex plugin for completing browser tasks autonomously. You provide a goal; JEV chooses a sequence of actions, the executor interacts with the browser, and the plugin records progress and findings.
+A browser automation tool for Codex and Claude Code. You provide a goal; JEV chooses a sequence of actions, the executor interacts with the browser, and the plugin records progress and findings.
 
 **Code builds the interface structure. No LLM is used for collection.**
 
 ## One-command installation
 
-**macOS / Linux.** Requires Node.js 22+, npm, Git, Codex CLI (`codex` in your PATH), and Google Chrome. The installer checks these tools before making changes. Windows is not supported yet.
+**macOS / Linux.** Requires Node.js 22+, npm, Git, Codex CLI (`codex`) or Claude Code (`claude`) in your PATH, and Google Chrome. The installer checks these tools before making changes. Windows is not supported yet.
 
 ### Using npx
 
@@ -16,13 +16,22 @@ Install the MCP server and skill with one command:
 npx --yes @legostin/jev-browser@latest install
 ```
 
+For Claude Code or both clients:
+
+```sh
+npx --yes @legostin/jev-browser@latest install --client claude
+npx --yes @legostin/jev-browser@latest install --client both
+```
+
+Claude-only installation does not require Codex. It registers a user-scoped MCP server and the skill in `~/.claude/skills/jev-browser`. Verify with `claude mcp get jev-browser`, then reconnect MCP or restart Claude Code. Both clients share the same local engine, configuration and Chrome connection, with separate conversation sessions. See [Claude Code's MCP documentation](https://code.claude.com/docs/en/mcp).
+
 Start the shared dashboard after installation:
 
 ```sh
 npx --yes @legostin/jev-browser@latest start
 ```
 
-With no arguments, the command runs `start`. Other commands include `configure`, `doctor`, `status`, `update`, `service status|stop|restart`, and `mcp`. Repeated launches use the same persistent service. `install` explicitly registers the tools with Codex; a normal launch does not register anything. MCP uses a stable local launcher, so clearing the npm cache does not break the installation. The Chrome extension still requires manual setup; see below.
+With no arguments, the command runs `start`. Other commands include `configure`, `doctor`, `status`, `update`, `service status|stop|restart`, and `mcp`. Repeated launches use the same persistent service. `install` explicitly registers the tools with the selected client (Codex by default); a normal launch does not register anything. MCP uses a stable local launcher, so clearing the npm cache does not break the installation. The unpacked Chrome extension requires a one-time installation; connection and tab selection are automatic after that.
 
 The repository is **public**. Installing over HTTPS does not require a GitHub account or authentication. npm runs the binary from the Git package according to the [npm exec rules](https://docs.npmjs.com/cli/npm-exec/).
 
@@ -42,7 +51,7 @@ If you already use an authenticated GitHub CLI (`gh auth login`):
 bash -o pipefail -c 'gh api -H "Accept: application/vnd.github.raw+json" repos/legostin/jev-browser/contents/install.sh?ref=main | bash'
 ```
 
-The command fetches the project, installs dependencies from the lockfile, builds it, checks MCP startup and the core tools, registers the server through `codex mcp add`, and adds the Codex skill. Running it again preserves your settings and key. Updates require network access to GitHub and npm.
+The command fetches the project, installs dependencies from the lockfile, builds it, checks MCP startup and the core tools, registers the selected MCP client and skill, and installs the Chrome Native Messaging host. Running it again preserves your settings and key. Updates require network access to GitHub and npm.
 
 This installs **MCP + a skill**, without depending on internal Codex utility skills or changing your personal marketplace. It does not add a plugin card to the catalog. The repository retains a standard plugin manifest for separate distribution through a marketplace.
 
@@ -68,7 +77,7 @@ By default, JEV uses **your Chrome browser**: connect the extension as described
 
 Enabled by default. When MCP starts, it checks for updates **in the background, at most once a day**. The update channel is this repository's `main` branch. Downloading, dependency installation, building, type checking, and MCP validation run in a separate directory. Only a validated release becomes current. If GitHub/npm is unavailable or validation fails, the working release remains active. The next automatic attempt occurs on an MCP launch after another day has elapsed.
 
-A persistent local service owns the browser. It keeps running its existing version after a package update or MCP reconnection. To apply a new engine version, complete or pause your tasks and run `jev service restart`. Restarting the service releases browser connections and clears secrets held in memory; reconnect the extension afterward. A new Codex task picks up the updated skill. Previously installed releases remain available for running processes and rollback.
+A persistent local service owns the browser. It keeps running its existing version after a package update or MCP reconnection. To apply a new engine version, complete or pause your tasks and run `jev service restart`. Restarting the service releases browser connections and clears secrets held in memory; the extension reconnects automatically. A new Codex task picks up the updated skill. Previously installed releases remain available for running processes and rollback.
 
 ```sh
 ~/.local/bin/jev status             # Version, last update result, extension directory
@@ -139,18 +148,18 @@ Missing tools in a session cannot be fixed by silently launching another browser
 
 ## Extension for your regular Chrome browser
 
-The `chrome-extension/` directory contains JEV Browser Companion (Manifest V3, Chrome 125+). It connects a user-selected tab, including its existing signed-in session, to the same engine. Code still builds the structure; Playwright handles navigation and frames through a local `chrome.debugger` bridge.
+The `chrome-extension/` directory contains JEV Browser Companion (Manifest V3, Chrome 125+). It uses your regular Chrome session, including existing sign-ins. Code builds the page structure; Playwright handles navigation and frames through a local `chrome.debugger` bridge.
 
-1. In Chrome, open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select `~/.local/share/jev-browser/runtime/current/chrome-extension`. When running from source, select the project's `chrome-extension` directory.
-2. In a new Codex task, ask for the JEV connection link (`jev_status` → `dashboard`). Alternatively, run `npm start` and copy the connection link from the local dashboard. Use the link for the service that will run your task.
-3. Click the JEV icon in Chrome. Paste the full link into the side panel, select a tab, and click **Connect tab**.
-4. Ask Codex to perform the task **in the connected Chrome browser**. It will pass `browser: "extension"`, a plan, values, and checks. You can select the same mode in the local dashboard's browser selection field.
+1. Install JEV with the command above. In Chrome, open `chrome://extensions`, enable **Developer mode**, click **Load unpacked**, and select `~/.local/share/jev-browser/runtime/current/chrome-extension`.
+2. Ask Codex or Claude Code to perform your browser task. The extension connects automatically. No connection URL or token needs to be copied.
 
-Extension mode starts on the selected tab's current page; the `url` field is informational in this mode. Navigation happens as part of the task. Disconnecting revokes access but preserves the user's tab. One connection serves one task at a time. Clarifications and subsequent stages continue in the same task and tab. After completion, an explicitly new task record can reuse the same browser session. Cancellation or disconnection releases the connection; the tab must then be shared again. Only child tabs opened by the selected page are additionally accessible, with up to 8 tabs in the group.
+The task's `url` selects an existing exact page first, then an existing tab on the same origin. If neither exists, JEV opens one tab. Continuations reuse the current task and tab. Unrelated tabs are searched locally by URL for selection; their page contents are not collected. The side panel offers an optional manual tab selection and an advanced manual connection override for development.
 
-The extension uses the `debugger`, `tabs`, `sidePanel`, `storage`, and `webNavigation` permissions. The last one associates child tabs with their source even for links without an `opener`. Chrome displays a debugging indicator. Opening DevTools or disconnecting debugging may interrupt the connection; the task stops for review, and the action is not replayed automatically. The bridge listens only on loopback and validates the extension origin and private token; ordinary web pages cannot connect. The OpenRouter key is never sent to the extension. The connection token is stored only for the browser session.
+When JEV restarts, the extension discovers the new endpoint and reconnects to the same task tabs within the current Chrome session. It does not replay actions or resume tasks automatically. After a full Chrome restart, old tab IDs are discarded and the next task selects its site again. **Disconnect** disables automatic connection until you enable JEV in the side panel again. Chrome's debugging-stop control also revokes access. Closing the selected root tab disables the connection. User tabs remain open when a task is cancelled; only task-owned child tabs are closed. Each connection has one current task and up to eight tabs including its popups.
 
-Installing the extension in your personal profile requires the Chrome UI. After updating JEV, click **Reload** for the extension at `chrome://extensions` and reconnect the tab. Extension files update with the engine, but the loaded extension is not reloaded in the middle of a task. Until the extension is published in the Chrome Web Store, the project does not provide automatic installation or updates through the store. Distribution restrictions are described in the [Chrome documentation](https://developer.chrome.com/docs/extensions/how-to/distribute/install-extensions).
+The installer registers a [Chrome Native Messaging host](https://developer.chrome.com/docs/extensions/develop/concepts/native-messaging) for the extension's stable ID, using an absolute Node.js path and a durable launcher. The host returns the private localhost endpoint only to that extension. It exposes no public discovery endpoint and never returns the OpenRouter key. The WebSocket bridge still validates the extension origin and private token. Permissions are `debugger`, `tabs`, `sidePanel`, `storage`, `webNavigation`, `nativeMessaging`, and `alarms`. Chrome displays its debugging indicator while JEV controls a tab.
+
+For an existing installation, rerun the installer once to register the native host. Reload the unpacked extension after updating it. The new manifest adds permissions and a stable extension ID, so Chrome may require removing and loading an older unpacked copy once. Future service restarts require no pairing. Until publication in the Chrome Web Store, the extension's initial installation and loading updated files use Chrome's extension UI; see [Chrome's distribution rules](https://developer.chrome.com/docs/extensions/how-to/distribute/install-extensions).
 
 ## Persistent service and continuation without new windows
 
@@ -177,7 +186,7 @@ This saves `JEV_MIN_CONFIDENCE` in the private configuration file. After `jev se
 ## How it works
 
 ```text
-Codex / local dashboard
+Codex / Claude Code / local dashboard
         ↓ goal, exact values, outcome conditions
 TaskManager — state, history, limits, findings
         ↓
@@ -226,7 +235,7 @@ Memory is persisted with the task. A new browser session receives new tab identi
 
 A `done` decision from JEV triggers another observation and independent checks: URL, text, a named field's value, or the number of collected fragments. The `completed` status means the **configured checks** passed. Codex assesses whether those checks cover the goal. A fragment count does not prove the number of distinct products; visible text does not prove that a filter was applied. Without checks, proposed completion is returned to Codex as `needs_review`.
 
-History and snapshots are written atomically to `~/.local/share/jev-browser` with restricted permissions; set `JEV_DATA_DIR` to change the location. They may contain information from visited pages. Reconnecting MCP preserves the live browser session owned by the service. After the service itself stops or crashes, history remains, but the connection must be reopened: `isolated` opens the last URL, while `extension` requires sharing the Chrome tab again. The plugin does not guarantee restoration of previous form state. Pausing preserves tabs and form state. Step, request, and time limits are cumulative; time is checked between iterations, so an in-flight call may finish later.
+History and snapshots are written atomically to `~/.local/share/jev-browser` with restricted permissions; set `JEV_DATA_DIR` to change the location. They may contain information from visited pages. Reconnecting MCP preserves the live browser session owned by the service. After the service itself stops or crashes, history remains, but the connection must be reopened: `isolated` opens the last URL, while `extension` reconnects to the same tabs automatically within the current Chrome session. The plugin does not guarantee restoration of previous form state. Pausing preserves tabs and form state. Step, request, and time limits are cumulative; time is checked between iterations, so an in-flight call may finish later.
 
 ## Validation
 

@@ -1,4 +1,4 @@
-import { chromium, type Browser as PWBrowser, type BrowserContext, type Page, type Frame, type ElementHandle } from 'playwright';
+import { chromium, type Browser as PWBrowser, type BrowserContext, type Page, type Frame, type ElementHandle, type ConnectOverCDPTransport } from 'playwright';
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -26,18 +26,38 @@ export class BrowserAdapter {
   private script = '';
   private dialogMessage: string | null = null;
   private userPages = new Set<Page>();
+  private transport?:ConnectOverCDPTransport;
+  private stopped=false;
   constructor(private extension?:ExtensionBridge) {}
 
   isConnected() { return !!this.browser?.isConnected(); }
-  async open(url: string, headless: boolean) {
+  wasInterrupted(){return this.stopped;}
+  private async read<T>(phase:string,operation:()=>Promise<T>,signal?:AbortSignal):Promise<T>{
+    if(this.stopped||signal?.aborted)throw new Error('Browser read cancelled.');
+    let timer:NodeJS.Timeout|undefined,abort=()=>{};
+    const stop=(reject:(e:Error)=>void,message:string)=>{
+      this.stopped=true;this.transport?.close();void this.browser?.close().catch(()=>{});reject(new Error(message));
+    };
+    try{return await Promise.race([operation(),new Promise<never>((_,reject)=>{
+      timer=setTimeout(()=>stop(reject,`Chrome timed out while ${phase}. No further actions were started. Inspect before resuming.`),20000);
+      abort=()=>stop(reject,`Browser read cancelled while ${phase}.`);signal?.addEventListener('abort',abort,{once:true});if(signal?.aborted)abort();
+    })]);}finally{clearTimeout(timer);signal?.removeEventListener('abort',abort);}
+  }
+  async open(url:string,headless:boolean,signal?:AbortSignal){return this.read('opening the browser',()=>this.openOnce(url,headless),signal);}
+  private async openOnce(url: string, headless: boolean) {
     httpUrl(url);
     this.script = await readFile(fileURLToPath(new URL('../collector.js', import.meta.url)), 'utf8');
+    if(this.stopped)throw new Error('Browser opening cancelled.');
     const cdp = process.env.JEV_CDP_URL;
     if(this.extension){
-      this.browser=await chromium.connectOverCDP(this.extension.createTransport(),{noDefaults:true,timeout:20000});
+      await this.extension.selectTab(url);
+      if(this.stopped)throw new Error('Browser opening cancelled.');
+      this.transport=this.extension.createTransport();
+      this.browser=await chromium.connectOverCDP(this.transport,{noDefaults:true,timeout:20000});
       this.context=this.browser.contexts()[0];this.attached=true;
       const selected=this.context.pages()[0];if(!selected)throw new Error('The shared Chrome tab is unavailable.');
       this.page=selected;this.userPages.add(selected);this.registerPage(selected);
+      for(const page of this.context.pages())this.registerPage(page);
     } else if (cdp) {
       const u = new URL(cdp);
       if (!['127.0.0.1','localhost','[::1]'].includes(u.hostname)) throw new Error('JEV_CDP_URL must point to a local browser.');
@@ -48,6 +68,7 @@ export class BrowserAdapter {
       this.browser = await chromium.launch({ headless, channel: process.env.JEV_BROWSER_CHANNEL || 'chrome' });
       this.context = await this.browser.newContext({ viewport: { width: 1360, height: 900 }, acceptDownloads: false });
     }
+    if(this.stopped){await this.browser.close();throw new Error('Browser opening cancelled.');}
     this.context.setDefaultTimeout(2500);
     this.context.on('page', async p => {
       const opener = await p.opener();
@@ -66,7 +87,8 @@ export class BrowserAdapter {
     page.on('dialog', async d => { this.dialogMessage = `Browser ${d.type()} dialog was dismissed: ${d.message().slice(0,300)}`; await d.dismiss().catch(() => {}); });
     page.on('close', () => this.pages.delete(id));
   }
-  async observe(): Promise<Snapshot> {
+  async observe(signal?:AbortSignal): Promise<Snapshot> {return this.read('reading the page',()=>this.observeWithRetry(),signal);}
+  private async observeWithRetry(): Promise<Snapshot> {
     // Retrying an interrupted read is safe; never replay a browser mutation here.
     for(let attempt=0;attempt<3;attempt++) {
       const page=this.page;
@@ -129,8 +151,9 @@ export class BrowserAdapter {
     return { version:digest({url, semantics, tabs}), observedAt:new Date().toISOString(), pageId:this.pageIds.get(this.page)!,
       url, title, tabs, frames, nodes, limitations };
   }
-  async act(action: Action, observed: Snapshot, text?: string):Promise<void|{target:string;rebound:boolean}> {
-    const current = await this.observe();
+  async act(action: Action, observed: Snapshot, text?: string,signal?:AbortSignal):Promise<void|{target:string;rebound:boolean}> {
+    const current = await this.observe(signal);
+    if(signal?.aborted||this.stopped)throw new Error('Paused before execution.');
     const validated=validateAction(action,observed,current);
     if (action.op === 'wait') { await this.page.waitForTimeout(350); return; }
     if (action.op === 'switch_tab') {

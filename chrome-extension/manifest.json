@@ -1,13 +1,33 @@
 {
   "manifest_version": 3,
   "name": "JEV Browser Companion",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "minimum_chrome_version": "125",
-  "description": "Подключите выбранную вкладку Chrome к JEV Browser в Codex.",
-  "permissions": ["debugger", "tabs", "sidePanel", "storage", "webNavigation"],
-  "host_permissions": ["http://127.0.0.1/*"],
-  "background": {"service_worker": "worker.js", "type": "module"},
-  "action": {"default_title": "JEV Browser"},
-  "side_panel": {"default_path": "panel.html"},
-  "content_security_policy": {"extension_pages": "script-src 'self'; object-src 'none'; connect-src ws://127.0.0.1:* http://127.0.0.1:*"}
+  "description": "JEV browser automation for Codex and Claude Code.",
+  "permissions": [
+    "debugger",
+    "tabs",
+    "sidePanel",
+    "storage",
+    "webNavigation",
+    "nativeMessaging",
+    "alarms"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1/*"
+  ],
+  "background": {
+    "service_worker": "worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "JEV Browser"
+  },
+  "side_panel": {
+    "default_path": "panel.html"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; connect-src ws://127.0.0.1:* http://127.0.0.1:*"
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAto/0aUiRM+tQjdOvfxxVVLPFUQI6Fv1rVvj1+gV5z75bOJDIHRVWX85uWWSygZnwrmkD6pMc7k7qxbttbczxOrZY7XYeLWuoQUI1JpSwZauQr7UWa066EMU2s9rZJYxfoYbTgsa0ArIG9+ukqwdwIU8BncOB1YhNO6D7Qxgs/D3lX4q3iiKh/3HOEDzs3Ut2oUS1WSEMzzgX4Z4jUtSaGmgSsy+2Z/X+rV069X9GNpbIQF4BPHdGe/0Om/NMqBUSti+0JpGvnbGtNbGKpcGX/71SsMtcRYxjrSKmGmMzJtoaSrO+L1/FVqonlLh8x6+b1ZmjO/e7AYA6ZQ+xHEJgfQIDAQAB"
 }

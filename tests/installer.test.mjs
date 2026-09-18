@@ -128,3 +128,25 @@ test('confidence command preserves credentials and rejects out-of-range threshol
   await assert.rejects(main(root,['confidence','1.2']),/от 0 до 1/);
   assert.equal(await readFile(config,'utf8'),changed);
 });
+
+test('Claude registration is user-scoped, repeatable and preserves unrelated servers',async t=>{
+  const home=await fixture(t),calls=[],launcher=join(home,'launcher.mjs'),config=join(home,'private.env');
+  const {registerClaude}=await import('../scripts/clients.mjs');
+  const run=(c,a)=>calls.push([c,a]);
+  await registerClaude({home,launcher,config,run});
+  assert.deepEqual(calls[0].slice(0,1),['claude']);assert.deepEqual(calls[0][1].slice(0,5),['mcp','add-json','--scope','user','jev-browser']);
+  const server=JSON.parse(calls[0][1][5]);await writeFile(join(home,'.claude.json'),JSON.stringify({mcpServers:{'jev-browser':server,other:{command:'keep'}}}));
+  calls.length=0;await registerClaude({home,launcher,config,run});assert.equal(calls.length,0);
+  await writeFile(join(home,'.claude.json'),JSON.stringify({mcpServers:{'jev-browser':{command:'other',args:[]}}}));
+  await assert.rejects(registerClaude({home,launcher,config,run}),/preserved/);assert.equal(calls.length,0);
+});
+test('native host installer uses a stable executable and allows only the bundled extension',async t=>{
+  const home=await fixture(t),root=join(home,'runtime');await mkdir(root);
+  const {installNativeHost,extensionId}=await import('../scripts/native-host.mjs');
+  const result=await installNativeHost(root,resolve('.'),{home,platform:'darwin'});
+  const manifest=JSON.parse(await readFile(join(home,'Library/Application Support/Google/Chrome/NativeMessagingHosts/in.legost.jev_browser.json'),'utf8'));
+  assert.deepEqual(manifest.allowed_origins,[result.origin]);assert.equal(manifest.path,join(root,'native-host'));
+  assert.match(await readFile(result.executable,'utf8'),/current\/dist\/src\/native-host.js/);
+  const key=JSON.parse(await readFile('chrome-extension/manifest.json','utf8')).key;
+  assert.equal(result.origin,`chrome-extension://${extensionId(key)}/`);
+});

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-for tool in node npm git codex; do
+for tool in node npm git; do
   command -v "$tool" >/dev/null 2>&1 || { echo "JEV: установите $tool и повторите команду." >&2; exit 1; }
 done
 node -e 'if(Number(process.versions.node.split(".")[0])<22){console.error("JEV требует Node.js 22+");process.exit(1)}'

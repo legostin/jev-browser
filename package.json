@@ -1,6 +1,6 @@
 {
   "name": "@legostin/jev-browser",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -33,7 +33,7 @@
   "files": [
     "bin/"
   ],
-  "description": "Install and run JEV Browser for Codex: persistent browser sessions, deterministic page structure, and autonomous workflows.",
+  "description": "Install and run JEV Browser for Codex and Claude Code: persistent browser sessions, deterministic page structure, and autonomous workflows.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/legostin/jev-browser.git"
@@ -47,7 +47,8 @@
     "mcp",
     "jev",
     "browser-automation",
-    "browser-use"
+    "browser-use",
+    "claude-code"
   ],
   "publishConfig": {
     "access": "public",

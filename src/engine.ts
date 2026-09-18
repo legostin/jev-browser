@@ -66,7 +66,7 @@ export class TaskManager extends EventEmitter {
     const {secrets,...input}=TaskRequest.parse(raw); httpUrl(input.url);
     let inherited:Live|undefined, previousId:string|undefined;
     if(input.browser==='extension') {
-      if(!this.extension.status().connected) throw new Error('Connect your Chrome tab using the private dashboard link from jev_status. No separate browser was opened. Use browser=isolated only when explicitly requested.');
+      if(!this.extension.status().connected) throw new Error('JEV Browser Companion is not connected. It reconnects automatically when installed and enabled. Check the extension status; no separate browser was opened.');
       for(const [id,live] of this.live) if(this.get(id).input.browser==='extension'&&live.opened&&!live.browser.isConnected()&&!this.extension.status().busy)this.live.delete(id);
       const owner=[...this.live].find(([id])=>this.get(id).input.browser==='extension');
       if(owner) {
@@ -87,6 +87,7 @@ export class TaskManager extends EventEmitter {
   }
   private launch(task:TaskRecord) {
     let old=this.live.get(task.id);
+    if(old?.browser.wasInterrupted?.()){this.live.delete(task.id);old=undefined;}
     if(old?.opened && task.input.browser==='extension' && !old.browser.isConnected() && this.extension.status().connected) {
       this.live.delete(task.id);old=undefined;
     }
@@ -104,13 +105,15 @@ export class TaskManager extends EventEmitter {
     const signal=live.controller.signal;
     let noProgress=0;
     try {
-      if (!live.opened) {await live.browser.open(task.snapshot?.url || task.input.url,task.input.headless);beginBrowserSession(task);live.opened=true;}
+      if (!live.opened) {await live.browser.open(task.snapshot?.url || task.input.url,task.input.headless,signal);beginBrowserSession(task);live.opened=true;}
       while (!signal.aborted && task.status==='running') {
         task.elapsedMs=previousElapsed+Date.now()-started;
         if (task.steps>=task.input.maxSteps || task.requests>=task.input.maxSteps*3 || task.elapsedMs>=task.input.maxSeconds*1000) {
           task.status='paused';task.message='Execution budget reached. Review progress or resume with larger limits.';break;
         }
-        const snapshot=await live.browser.observe();
+        task.message='Reading browser page…';await this.save(task);
+        const snapshot=await live.browser.observe(signal);
+        if(signal.aborted)break;
         rememberObservation(task,snapshot,'before_decision');
         task.snapshot=snapshot;
         if(live.focus&&!snapshot.nodes.some(n=>n.id===live.focus)) {live.focus=undefined;live.index=0;}
@@ -138,12 +141,12 @@ export class TaskManager extends EventEmitter {
         if(a.op==='blocked') {task.status='needs_input';task.pending={kind:'blocked',context:'JEV cannot progress. Refine the goal, supply missing values, or inspect unsupported content.'};task.message=task.pending.context;this.log(task,a,snapshot,'blocked',decision.confidence);break;}
         if(a.op==='done') {
           // Re-observe: a model completion signal is never accepted on stale evidence.
-          const fresh=await live.browser.observe();task.snapshot=fresh;
+          const fresh=await live.browser.observe(signal);if(signal.aborted)break;task.snapshot=fresh;
           rememberObservation(task,fresh,'verification');
           if(fresh.version!==snapshot.version) {this.log(task,a,snapshot,'stale; completion not accepted');continue;}
           task.verification=verify(fresh,task.input,task.evidence.length);
           task.status=task.verification.passed?'completed':'needs_review';
-          task.message=task.verification.passed?'All configured outcome checks passed.':'JEV proposed completion. Codex must review the evidence; configured checks are absent or did not pass.';
+          task.message=task.verification.passed?'All configured outcome checks passed.':'JEV proposed completion. The host agent must review the evidence; configured checks are absent or did not pass.';
           if(!task.verification.passed) task.pending={kind:'review',context:task.message};
           this.log(task,a,snapshot,task.message,decision.confidence);break;
         }
@@ -184,13 +187,13 @@ export class TaskManager extends EventEmitter {
         // Persist intent first. A failure after browser input is uncertain and is never automatically retried.
         const entry=this.log(task,a,snapshot,'executing',decision.confidence,a.op==='fill_secret'?undefined:text);await this.save(task);
         if(signal.aborted||task.status!=='running') {task.history.at(-1)!.outcome='paused before execution';break;}
-        try { const executed=await live.browser.act(a,snapshot,text);if(executed){Object.assign(entry,{executionTarget:executed.target,rebound:executed.rebound});} }
+        try { const executed=await live.browser.act(a,snapshot,text,signal);if(executed){Object.assign(entry,{executionTarget:executed.target,rebound:executed.rebound});} }
         catch(error) {
           if(error instanceof StaleObservation) {task.history.at(-1)!.outcome='stale; not executed';await this.save(task);continue;}
           task.history.at(-1)!.outcome='execution uncertain; inspect before resuming';if(a.op==='fill_secret')throw new Error('Private input result is uncertain. Inspect before resuming.');throw error;
         }
         entry.outcome='executed';entry.context.enteredText=entry.context.requestedText;await this.save(task);
-        const after=await live.browser.observe();task.snapshot=after;
+        const after=await live.browser.observe(signal);if(signal.aborted)break;task.snapshot=after;
         rememberActionResult(task,a,snapshot,after,entry);
         noProgress=after.version===snapshot.version && a.op!=='wait'?noProgress+1:0;
         if(noProgress>=3) {task.status='needs_review';task.message='Three interactions did not change the observed interface. Review before continuing.';task.pending={kind:'review',context:task.message};}
@@ -246,7 +249,7 @@ export class TaskManager extends EventEmitter {
     if(task.status==='running') throw new Error('Pause before updating a running task.');
     if(task.status==='cancelled') throw new Error('Cancelled tasks cannot be resumed; start a new task.');
     if(task.input.browser==='extension') {
-      if(!this.extension.status().connected) throw new Error('Reconnect your Chrome tab using jev_status before resuming. No separate browser was opened.');
+      if(!this.extension.status().connected) throw new Error('Wait for JEV Browser Companion to reconnect automatically; check jev_status before resuming. No separate browser was opened.');
       const owner=[...this.live].find(([other,live])=>other!==id&&this.get(other).input.browser==='extension'&&(live.browser.isConnected()||this.get(other).status==='running'));
       if(owner)throw new Error(`Chrome now belongs to task ${owner[0]}. Continue that task instead.`);
     }

@@ -18,11 +18,19 @@ test('start requires explicit installation and routes to durable launcher withou
 });
 test('install is explicit; setup uses a temporary Git checkout and cleans it after failure',async t=>{
   const root=await temporary(t);let installed=0;await main(['install'],{installRuntime:async()=>installed++});assert.equal(installed,1);
-  await assert.rejects(main(['install','extra'],{installRuntime:async()=>assert.fail()}),/не принимает/);
+  await assert.rejects(main(['install','extra'],{installRuntime:async()=>assert.fail()}),/принимает только/);
   const calls=[];await assert.rejects(install({temporary:root,run:(cmd,args)=>{calls.push([cmd,args]);if(cmd==='gh')throw new Error('no gh');if(args[0]?.endsWith('setup.mjs'))throw new Error('setup failed');}}),/setup failed/);
   assert.ok(calls.some(([c,a])=>c==='git'&&a[0]==='clone'));assert.ok(calls.some(([,a])=>a[0]?.endsWith('source/scripts/setup.mjs')));assert.deepEqual(await readdir(root),[]);
 });
 test('authenticated gh clone uses the existing installer and is cleaned after success',async t=>{
   const root=await temporary(t),calls=[];await install({temporary:root,run:(...args)=>calls.push(args)});
   assert.ok(calls.some(([cmd,args])=>cmd==='gh'&&args[0]==='repo'));assert.ok(!calls.some(([cmd,args])=>cmd==='git'&&args[0]==='clone'));assert.deepEqual(await readdir(root),[]);
+});
+
+test('Claude-only installation forwards options without requiring Codex',async t=>{
+  const root=await temporary(t),calls=[];
+  await install({temporary:root,args:['--client','claude'],run:(cmd,args)=>{calls.push([cmd,args]);if(cmd==='codex')assert.fail('Codex not required');}});
+  assert.ok(calls.some(([c,a])=>c==='claude'&&a[0]==='--version'));
+  assert.ok(calls.some(([,a])=>a[0]?.endsWith('setup.mjs')&&a[1]==='--client'&&a[2]==='claude'));
+  let options;await main(['install','--client','both'],{installRuntime:async o=>options=o});assert.deepEqual(options.args,['--client','both']);
 });

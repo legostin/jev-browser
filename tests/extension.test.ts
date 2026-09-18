@@ -45,15 +45,17 @@ test('real Chrome extension shares a selected tab, executes across navigation an
   try{
     ctx=await chromium.launchPersistentContext(join(dir,'profile'),{channel:'chromium',headless:true,args:[`--disable-extensions-except=${extension}`,`--load-extension=${extension}`]});
     const worker=ctx.serviceWorkers()[0]||await ctx.waitForEvent('serviceworker');
+    // Chrome may deliver Runtime events before an earlier getFrameTree reply reaches the bridge.
+    await worker.evaluate(()=>{const api=(globalThis as any).chrome.debugger,send=api.sendCommand.bind(api);let first=true;api.sendCommand=async(...args:any[])=>{const result=await send(...args);if(args[1]==='Page.getFrameTree'&&first){first=false;await new Promise(r=>setTimeout(r,300));}return result;};});
     const selected=await ctx.newPage();await selected.goto(url);
     const unrelated=await ctx.newPage();await unrelated.goto(url+'/private');
     const extensionId=new URL(worker.url()).host;
     const ui=await ctx.newPage();await ui.goto(`chrome-extension://${extensionId}/panel.html`);
-    await ui.locator('#link').fill(panel.url);
+    await ui.locator('summary').click();await ui.locator('#link').fill(panel.url);
     const tab=await worker.evaluate(async()=>{const tabs=await (globalThis as any).chrome.tabs.query({});return tabs.find((t:any)=>t.url?.endsWith('/')&&t.title==='Extension test search');});
     assert.ok(tab?.id,'fixture tab exists');
     await ui.locator('#tab').selectOption(String(tab.id));await ui.locator('#submit').click();
-    await ui.locator('#status').filter({hasText:'Подключено к Codex'}).waitFor({timeout:10000}).catch(async error=>{throw new Error(`${error.message} UI: ${await ui.locator('body').innerText()} bridge: ${JSON.stringify(m.extension.status())}`);});
+    await ui.locator('#status').filter({hasText:'Подключено к JEV'}).waitFor({timeout:10000}).catch(async error=>{throw new Error(`${error.message} UI: ${await ui.locator('body').innerText()} bridge: ${JSON.stringify(m.extension.status())}`);});
     assert.equal(m.extension.status().tabs.length,1);assert.equal(m.extension.status().tabs[0].id,tab.id);
     const task=await m.start({goal:'Find Toyota Camry',url,browser:'extension',values:[{label:'Search',text:'Toyota Camry'}],checks:[{kind:'url_contains',value:'/detail'},{kind:'text_contains',value:'Toyota Camry detail'}]});
     const end=Date.now()+40000;while(m.get(task.id).status==='running'&&Date.now()<end)await new Promise(r=>setTimeout(r,100));
@@ -74,5 +76,5 @@ test('real Chrome extension shares a selected tab, executes across navigation an
     assert.equal(ctx.pages().length,pageCount);assert.equal(m.extension.status().connected,true);
     await m.cancel(task.id);assert.equal(selected.isClosed(),false);assert.equal(m.extension.status().connected,true);
     await m.cancel(next.id);assert.equal(selected.isClosed(),false);assert.ok(selected.url().includes('/result'));assert.equal(ctx.pages().some(p=>p.url().endsWith('/detail')),false);
-  }finally{await m.shutdown();await panel.close();await ctx?.close();await new Promise<void>(r=>fixture.close(()=>r()));await rm(dir,{recursive:true,force:true});}
+  }finally{await ctx?.close();await m.shutdown();await panel.close();await new Promise<void>(r=>fixture.close(()=>r()));await rm(dir,{recursive:true,force:true});}
 });

@@ -11,12 +11,12 @@ const snapshot:Snapshot={version:'v1',observedAt:'now',pageId:'p',url:'https://e
 class BrowserFixture extends BrowserAdapter {opens=0;async open(){this.opens++;}async observe(){return snapshot;}async close(){}}
 function decision(p:any,op:string,confidence=1){const action=p.actions.find((a:any)=>a.op===op);return {action,confidence,probabilities:{},latencyMs:0,usage:{inputTokens:0,cost:0}};}
 
-test('unpaired Chrome fails before creating a task or browser; separate mode is explicit',async()=>{
+test('unavailable Chrome fails before creating a task or browser; separate mode is explicit',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'jev-default-'));let browsers=0;
   const m=new TaskManager(new TaskStore(dir),undefined,()=>{browsers++;return new BrowserFixture();});
   try {
     assert.equal(TaskInput.parse({goal:'Work',url:snapshot.url}).browser,'extension');
-    for(let i=0;i<5;i++) await assert.rejects(m.runOrResume({goal:'Work',url:snapshot.url}),/Connect your Chrome tab/);
+    for(let i=0;i<5;i++) await assert.rejects(m.runOrResume({goal:'Work',url:snapshot.url}),/Companion is not connected/);
     assert.equal(browsers,0);assert.equal(m.tasks.size,0);
   }finally{await m.shutdown();await rm(dir,{recursive:true,force:true});}
 });

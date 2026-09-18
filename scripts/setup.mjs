@@ -4,10 +4,14 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runtimeRoot, withLock, run, stage, activate, atomicJSON, json, pointCurrent } from './manage.mjs';
+import { installClients } from '../bin/jev-browser.mjs';
+import { registerClaude } from './clients.mjs';
+import { installNativeHost } from './native-host.mjs';
 const source = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const root = runtimeRoot();
 const bin = join(homedir(), '.local/bin/jev');
-const skill = join(homedir(), '.agents/skills/jev-browser');
+const clients=installClients(process.argv.slice(2));
+const skills=clients.map(client=>join(homedir(),client==='claude'?'.claude/skills/jev-browser':'.agents/skills/jev-browser'));
 const skillTarget = join(root, 'current/skills/jev-browser');
 const launcher = join(root, 'launcher.mjs');
 const shellQuote = value => `'${value.replaceAll("'", "'\\''")}'`;
@@ -19,9 +23,9 @@ async function assertManagedLink(path, target) {
 }
 if (Number(process.versions.node.split('.')[0]) < 22) throw new Error('Требуется Node.js 22+.');
 if (!['darwin', 'linux'].includes(process.platform)) throw new Error('Поддерживаются macOS и Linux.');
-for (const command of ['git', 'npm', 'codex']) run(command, ['--version'], source, true);
+for (const command of ['git', 'npm', ...clients]) run(command, ['--version'], source, true);
 await assertManagedLink(bin, join(root, 'jev'));
-await assertManagedLink(skill, skillTarget);
+for(const skill of skills)await assertManagedLink(skill, skillTarget);
 const revision = run('git', ['rev-parse', 'HEAD'], source, true).trim();
 await withLock(root, async () => {
   const previous = await json(join(root, 'state.json'), null);
@@ -42,23 +46,25 @@ await withLock(root, async () => {
   await writeFile(join(root, 'jev'),
     `#!/bin/sh\nexec ${shellQuote(process.execPath)} ${shellQuote(launcher)} "$@"\n`, { mode: 0o700 });
   await mkdir(dirname(bin), { recursive: true });
-  await mkdir(dirname(skill), { recursive: true });
+  for(const skill of skills)await mkdir(dirname(skill), { recursive: true });
   const linksCreated = [];
   try {
     await activate(root, release, revision);
-    for (const [path, target] of [[bin, join(root, 'jev')], [skill, skillTarget]]) {
+    for (const [path, target] of [[bin, join(root, 'jev')], ...skills.map(skill=>[skill,skillTarget])]) {
       try { await symlink(target, path); linksCreated.push(path); }
       catch (error) { if (error.code !== 'EEXIST') throw error; }
     }
     await atomicJSON(join(root, 'settings.json'), await json(join(root, 'settings.json'), { autoUpdate: true }));
     await atomicJSON(join(root, 'update-status.json'), { checkedAt: Date.now(), outcome: 'installed', revision });
-    run('codex', ['mcp', 'add', 'jev-browser', '--env', `JEV_CONFIG_FILE=${config}`, '--', process.execPath, launcher], source);
+    await installNativeHost(root,release,{config});
+    if(clients.includes('codex'))run('codex', ['mcp', 'add', 'jev-browser', '--env', `JEV_CONFIG_FILE=${config}`, '--', process.execPath, launcher], source);
+    if(clients.includes('claude'))await registerClaude({run:(command,args)=>run(command,args,source),launcher,config});
   } catch (error) {
     if (previous) { await pointCurrent(root, join(root, 'releases', previous.revision)); await atomicJSON(join(root, 'state.json'), previous); }
     else { await rm(join(root, 'current'), { force: true }); await rm(join(root, 'state.json'), { force: true }); }
     for (const link of linksCreated) await rm(link, { force: true });
     throw error;
   }
-  console.log(`\nJEV установлен: MCP + навык Codex.\nАвтообновление: ${(await json(join(root, 'settings.json'))).autoUpdate ? 'включено' : 'выключено'}.\nКоманды: ${bin} status | update | configure\nChrome: ${join(root, 'current/chrome-extension')}\nНачните новую задачу Codex / перезапустите MCP.`);
+  console.log(`\nJEV установлен: MCP + навык (${clients.join(', ')}), автоматическое подключение Chrome.\nАвтообновление: ${(await json(join(root, 'settings.json'))).autoUpdate ? 'включено' : 'выключено'}.\nКоманды: ${bin} status | update | configure\nChrome: ${join(root, 'current/chrome-extension')}\nПерезапустите подключение MCP.`);
   if (!existsSync(config) && !process.env.OPENROUTER_API_KEY) console.log(`\nДобавьте ключ с помощью ${bin} configure (скрытый ввод).`);
 });

@@ -6,7 +6,7 @@ import { z } from 'zod';
 
 const Tab=z.object({id:z.number().int().nonnegative(),url:z.string().max(8000),title:z.string().max(1000),owned:z.boolean().default(false)});
 type Tab=z.infer<typeof Tab>;
-type Session={tabId:number;id:string;info:any;children:Set<string>};
+type Session={tabId:number;id:string;info:any;children:Set<string>;frameTree:Promise<void>;frameTreeReady:()=>void};
 
 /** A single explicitly shared Chrome tab (plus its popups), never a browser-wide endpoint. */
 export class ExtensionBridge {
@@ -15,12 +15,12 @@ export class ExtensionBridge {
   private tabs=new Map<number,Tab>();
   private sessions=new Map<number,Session>();
   private attaching=new Map<number,Promise<Session>>();
-  private callbacks=new Map<number,{resolve:(v:any)=>void;reject:(e:Error)=>void;timer:NodeJS.Timeout}>();
+  private callbacks=new Map<number,{resolve:(v:any)=>void;reject:(e:Error)=>void;timer:NodeJS.Timeout;method:string;started:number}>();
   private sequence=0;
   private autoAttach=false;
   private userAgent='';
   private ready=false;
-  status(){return {connected:this.ready,busy:!!this.transport,tabs:[...this.tabs.values()]};}
+  status(){return {connected:this.ready,busy:!!this.transport,tabs:[...this.tabs.values()],pending:[...this.callbacks.values()].map(c=>({method:c.method,elapsedMs:Date.now()-c.started}))};}
   bind(server:Server,origin:()=>string,token:string) {
     const wss=new WebSocketServer({noServer:true,maxPayload:8*1024*1024});
     server.on('upgrade',(req,socket,head)=>{
@@ -38,8 +38,8 @@ export class ExtensionBridge {
             if(!authenticated){
               const supplied=Buffer.from(typeof m.token==='string'?m.token:''),expected=Buffer.from(token);
               if(m.type!=='hello'||supplied.length!==expected.length||!timingSafeEqual(supplied,expected)||this.socket){ws.close(1008,'Pairing rejected');return;}
-              const tab=Tab.parse(m.tab);if(!/^https?:\/\//.test(tab.url))throw new Error('Only web tabs can be shared.');
-              authenticated=true;clearTimeout(timer);this.socket=ws;this.tabs.set(tab.id,{...tab,owned:false});
+              const tab=m.tab?Tab.parse(m.tab):undefined;if(tab&&!/^https?:\/\//.test(tab.url))throw new Error('Only web tabs can be shared.');
+              authenticated=true;clearTimeout(timer);this.socket=ws;if(tab)this.tabs.set(tab.id,{...tab,owned:false});
               this.userAgent=typeof m.userAgent==='string'?m.userAgent.slice(0,500):'';this.ready=true;ws.send(JSON.stringify({type:'ready'}));return;
             }
             if(m.type==='ping'){ws.send(JSON.stringify({type:'pong'}));return;}
@@ -72,26 +72,35 @@ export class ExtensionBridge {
     return ()=>{for(const ws of wss.clients)ws.terminate();wss.close();};
   }
   private disconnected(){
-    this.socket=undefined;this.ready=false;this.tabs.clear();this.sessions.clear();this.attaching.clear();this.autoAttach=false;
+    this.socket=undefined;this.ready=false;this.tabs.clear();for(const s of this.sessions.values())s.frameTreeReady();this.sessions.clear();this.attaching.clear();this.autoAttach=false;
     for(const c of this.callbacks.values()){clearTimeout(c.timer);c.reject(new Error('Chrome extension disconnected. Inspect before resuming.'));}this.callbacks.clear();
     const t=this.transport;this.transport=undefined;t?.onclose?.('Chrome extension disconnected');
   }
   private rpc(method:string,params:unknown):Promise<any>{
     if(!this.ready||this.socket?.readyState!==WebSocket.OPEN)return Promise.reject(new Error('Connect a tab in the JEV Chrome extension first.'));
-    const id=++this.sequence;
+    const id=++this.sequence,label=method==='command'?(params as any).method:method;
     return new Promise((resolve,reject)=>{
-      const timer=setTimeout(()=>{this.callbacks.delete(id);reject(new Error(`Chrome bridge timed out: ${method}. Action outcome may be uncertain.`));},20000);
-      this.callbacks.set(id,{resolve,reject,timer});this.socket!.send(JSON.stringify({id,method,params}));
+      const timer=setTimeout(()=>{this.callbacks.delete(id);reject(new Error(`Chrome bridge timed out: ${label}. Inspect before resuming.`));},20000);
+      this.callbacks.set(id,{resolve,reject,timer,method:label,started:Date.now()});this.socket!.send(JSON.stringify({id,method,params}));
     });
   }
   private emit(message:object){this.transport?.onmessage?.(message);}
+  async selectTab(url:string){
+    if(this.tabs.size)return;
+    if(this.transport)throw new Error('Chrome is already in use.');
+    const result=await this.rpc('selectTab',{url});const tab=Tab.parse(result.tab);
+    this.tabs.set(tab.id,{...tab,owned:false});
+  }
   private async attach(tabId:number):Promise<Session>{
     const existing=this.sessions.get(tabId);if(existing)return existing;
     if(this.attaching.has(tabId))return this.attaching.get(tabId)!;
+    const socket=this.socket;
     const promise=(async()=>{
       await this.rpc('attach',{tabId});
       const {targetInfo}=await this.rpc('command',{tabId,method:'Target.getTargetInfo'});
-      const s:Session={tabId,id:`jev-${++this.sequence}`,info:targetInfo,children:new Set()};this.sessions.set(tabId,s);
+      if(this.socket!==socket||!this.ready)throw new Error('Chrome connection changed during attachment.');
+      let frameTreeReady!:()=>void;const frameTree=new Promise<void>(r=>frameTreeReady=r);
+      const s:Session={tabId,id:`jev-${++this.sequence}`,info:targetInfo,children:new Set(),frameTree,frameTreeReady};this.sessions.set(tabId,s);
       this.emit({method:'Target.attachedToTarget',params:{sessionId:s.id,targetInfo:{...targetInfo,attached:true},waitingForDebugger:false}});return s;
     })();
     this.attaching.set(tabId,promise);try{return await promise;}finally{this.attaching.delete(tabId);}
@@ -101,7 +110,9 @@ export class ExtensionBridge {
     if(this.transport)throw new Error('The shared Chrome tab already belongs to a task. Cancel that task or disconnect it first.');
     const t:ConnectOverCDPTransport={
       send:(message:any)=>{void this.command(message.method,message.params,message.sessionId).then(
-        result=>t.onmessage?.({id:message.id,sessionId:message.sessionId,result}),
+        result=>{t.onmessage?.({id:message.id,sessionId:message.sessionId,result});
+          // Install Playwright's frame listeners before Chrome can emit Runtime contexts.
+          if(message.method==='Page.getFrameTree')queueMicrotask(()=>{for(const s of this.sessions.values())if(s.id===message.sessionId)s.frameTreeReady();});},
         error=>t.onmessage?.({id:message.id,sessionId:message.sessionId,error:{message:error.message}}));},
       close:()=>{if(this.transport===t){this.transport=undefined;this.autoAttach=false;this.ready=false;this.socket?.close(1000,'Task released Chrome');}t.onclose?.();}
     };
@@ -122,6 +133,7 @@ export class ExtensionBridge {
     }
     const s=[...this.sessions.values()].find(s=>s.id===sessionId||s.children.has(sessionId));
     if(!s)throw new Error('Unknown or detached Chrome session.');
+    if(method==='Runtime.enable'&&s.id===sessionId)await s.frameTree;
     if(method==='Target.getTargetInfo'&&s.id===sessionId)return {targetInfo:s.info};
     return this.rpc('command',{tabId:s.tabId,sessionId:s.id===sessionId?undefined:sessionId,method,params});
   }

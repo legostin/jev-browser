@@ -138,7 +138,7 @@ export async function configure() {
   const temp = `${config}.${randomUUID()}.tmp`;
   await writeFile(temp, `${lines.join('\n').trim()}\nOPENROUTER_API_KEY=${key}\n`, { mode: 0o600 });
   await rename(temp, config);
-  console.log('Ключ сохранён. Выполните jev service restart после завершения или паузы задач; затем подключите вкладку снова.');
+  console.log('Ключ сохранён. Выполните jev service restart после завершения или паузы задач; расширение восстановит подключение автоматически.');
 }
 export async function main(root, args) {
   const [command, value] = args;
