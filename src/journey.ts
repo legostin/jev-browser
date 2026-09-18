@@ -45,7 +45,7 @@ export function actionContext(task:TaskRecord,a:Action,s:Snapshot,text?:string):
 }
 export function rememberActionResult(task:TaskRecord,a:Action,before:Snapshot,after:Snapshot,entry:TaskRecord['history'][number]) {
   rememberObservation(task,after,'after_action',entry.step);
-  const from=before.nodes.find(n=>n.id===a.target),to=after.nodes.find(n=>n.id===a.target);
+  const from=before.nodes.find(n=>n.id===a.target),to=after.nodes.find(n=>n.id===(entry.executionTarget||a.target));
   const context=entry.context??actionContext(task,a,before);entry.context=context;context.to=pageLocation(task,after);
   if(entry.outcome==='executed')context.enteredText=context.requestedText;
   const oldTabs=new Set(before.tabs.map(t=>t.id)),newTabs=new Set(after.tabs.map(t=>t.id));

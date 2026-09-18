@@ -8,5 +8,5 @@ const root=join(homedir(),'.codex','plugins','cache','personal','jev-browser',ve
 const config=JSON.parse(await readFile(join(root,'.mcp.json'),'utf8')).mcpServers['jev-browser'];
 const data=await mkdtemp(join(tmpdir(),'jev-installed-'));
 const client=new Client({name:'jev-install-check',version:'1.0.0'});
-const transport=new StdioClientTransport({command:config.command,args:config.args.map(a=>a==='scripts/mcp-launcher.mjs'?join(root,a):a),cwd:tmpdir(),env:{...process.env,...config.env,JEV_DATA_DIR:data}});
+const transport=new StdioClientTransport({command:config.command,args:config.args.map(a=>a==='scripts/mcp-launcher.mjs'?join(root,a):a),cwd:tmpdir(),env:{...process.env,...config.env,JEV_DATA_DIR:data,JEV_EPHEMERAL:'1'}});
 try{await client.connect(transport);const tools=await client.listTools();const response=await client.callTool({name:'jev_status',arguments:{}});const status=JSON.parse(response.content[0].text);console.log(JSON.stringify({installedTools:tools.tools.length,configured:status.configured,model:status.model}));if(!status.configured)process.exitCode=1;}finally{await client.close();await rm(data,{recursive:true,force:true});}

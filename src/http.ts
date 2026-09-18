@@ -11,9 +11,10 @@ async function body(request:IncomingMessage) {
   for await(const part of request) {size+=part.length;if(size>100000) throw new Error('Request too large.');parts.push(part);}
   return JSON.parse(Buffer.concat(parts).toString('utf8')||'{}');
 }
-export async function dashboard(manager:TaskManager,port=0) {
+export async function dashboard(manager:TaskManager,port=0, rpc?:{token:string;serial:<T>(work:()=>Promise<T>)=>Promise<T>;call:(method:string,args:unknown,sessionId:string,signal:AbortSignal)=>Promise<unknown>}) {
   const token=randomBytes(24).toString('hex');
   let origin='';
+  const serial=<T>(work:()=>Promise<T>)=>rpc?rpc.serial(work):work();
   const server=createServer(async(request,response)=>{
     response.setHeader('Cache-Control','no-store');response.setHeader('X-Content-Type-Options','nosniff');
     response.setHeader('Referrer-Policy','no-referrer');response.setHeader('X-Frame-Options','DENY');
@@ -31,8 +32,15 @@ export async function dashboard(manager:TaskManager,port=0) {
       }
       const supplied=Buffer.from(String(request.headers['x-jev-token']||''));const expected=Buffer.from(token);
       if(supplied.length!==expected.length||!timingSafeEqual(supplied,expected)) return reply(401,{error:'Open the dashboard using its private launch link.'});
+      if(request.method==='POST'&&url.pathname==='/internal/rpc'&&rpc) {
+        const incoming=Buffer.from(String(request.headers['x-jev-rpc-token']||'')),expectedRPC=Buffer.from(rpc.token);
+        if(incoming.length!==expectedRPC.length||!timingSafeEqual(incoming,expectedRPC))return reply(403,{error:'Private service credentials required.'});
+        const data=z.object({method:z.string().max(40),args:z.unknown(),sessionId:z.string().max(128)}).strict().parse(await body(request));
+        const controller=new AbortController();const disconnected=()=>controller.abort();response.once('close',disconnected);
+        try{return reply(200,{result:await rpc.call(data.method,data.args,data.sessionId,controller.signal)});}finally{response.off('close',disconnected);}
+      }
       if(request.method==='GET'&&url.pathname==='/api/status') return reply(200,{configured:!!process.env.OPENROUTER_API_KEY,model:process.env.JEV_MODEL||'typesafe/jev-1.13',tasks:manager.list(),defaults:{browser:"extension",minConfidence:defaultConfidence()},extension:manager.extension.status()});
-      if(request.method==='POST'&&url.pathname==='/api/tasks') return reply(201,await manager.start(await body(request)));
+      if(request.method==='POST'&&url.pathname==='/api/tasks') {const data=await body(request);return reply(201,await serial(()=>manager.start(data)));}
       const match=url.pathname.match(/^\/api\/tasks\/([a-f0-9-]{36})(?:\/(pause|resume|cancel|secret))?$/);
       if(match) {
         const [,id,action]=match;
@@ -40,12 +48,12 @@ export async function dashboard(manager:TaskManager,port=0) {
         if(request.method==='POST') {
           if(action==='secret') {
             const data=z.object({target:z.string().min(1).max(200),secret:z.string().min(1).max(4000)}).strict().parse(await body(request));
-            try { return reply(200,await manager.fillSecret(id,data.target,data.secret)); }
+            try { return reply(200,await serial(()=>manager.fillSecret(id,data.target,data.secret))); }
             finally { data.secret=''; }
           }
-          if(action==='pause') return reply(200,await manager.pause(id));
-          if(action==='cancel') return reply(200,await manager.cancel(id));
-          if(action==='resume') return reply(200,await manager.resume(id,TaskRequest.partial().parse(await body(request))));
+          if(action==='pause') return reply(200,await serial(()=>manager.pause(id)));
+          if(action==='cancel') return reply(200,await serial(()=>manager.cancel(id)));
+          if(action==='resume'){const patch=TaskRequest.partial().parse(await body(request));return reply(200,await serial(()=>manager.resume(id,patch)));}
         }
       }
       reply(404,{error:'Not found.'});

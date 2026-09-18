@@ -24,3 +24,25 @@ test('fill is the primary editable action; advanced focus and keys remain discov
   for(const op of ['click','hover','press'])assert.ok(advanced.actions.some(a=>a.op===op));
   node.value='Toyota Camry';assert.ok(project(snapshot).actions.some(a=>a.op==='press'&&a.argument==='Enter'));
 });
+
+function groupNode(id:string,role:string,parent:string|null=null):UINode{return {id,role,parent,frame:'f',tag:role,name:id,text:'',source:'semantic',states:{disabled:false,readonly:false},relations:{},bounds:{x:0,y:0,width:10,height:10},inViewport:true,obscured:false,capabilities:role==='textbox'?['fill']:[]};}
+function groupSnapshot(nodes:UINode[]):Snapshot{return {version:'v',observedAt:'now',pageId:'p',url:'https://example.test',title:'Test',nodes,frames:[],tabs:[],limitations:[]};}
+test('forms stay whole beyond soft slice size through empty layout wrappers; dialogs take priority',()=>{
+  const wrapper={...groupNode('wrapper','group','form'),name:'',source:'layout' as const};
+  const nodes=[groupNode('form','form'),wrapper,...Array.from({length:30},(_,i)=>groupNode(`field${i}`,'textbox','wrapper')),groupNode('dialog','dialog'),groupNode('confirm','textbox','dialog')];
+  const s=groupSnapshot(nodes),first=project(s),second=project(s,undefined,1);
+  assert.ok(first.nodes.some(n=>n.id==='dialog'));assert.equal(first.coverage.pages,2);
+  assert.equal(second.nodes.filter(n=>n.role==='textbox').length,30);assert.ok(second.nodes.some(n=>n.id==='wrapper'));
+  assert.deepEqual(second.groups?.find(g=>g.id==='form'),{id:'form',role:'form',name:'form',total:31,included:31,complete:true});
+});
+test('oversized forms report partial coverage and remain completely discoverable',()=>{
+  const s=groupSnapshot([groupNode('form','form'),...Array.from({length:90},(_,i)=>groupNode(`f${i}`,'textbox','form'))]);
+  const first=project(s);assert.ok(first.groups?.some(g=>!g.complete));assert.ok(first.coverage.limitations.some(x=>x.includes('64')));
+  const seen=new Set<string>();for(let i=0;i<first.coverage.pages;i++)for(const n of project(s,undefined,i).nodes)seen.add(n.id);
+  assert.equal(seen.size,s.nodes.length);
+});
+test('change context reports bounded semantic differences and navigation',()=>{
+  const before=groupSnapshot([groupNode('field','textbox')]),after=structuredClone(before);after.nodes[0].value='Camry';
+  const p=project(after,undefined,0,false,[],before);assert.equal(p.changes?.kind,'update');if(p.changes?.kind==='update')assert.equal(p.changes.counts.changed,1);
+  after.url+='/?search=Camry';assert.equal(project(after,undefined,0,false,[],before).changes?.kind,'navigation');assert.equal(project(before).changes?.kind,'initial');
+});

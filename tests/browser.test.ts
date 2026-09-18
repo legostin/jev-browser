@@ -91,3 +91,17 @@ test('navigation interruption retries observation, while unrelated collector err
     frame.evaluate=evaluate;
   }finally{await b.close();}
 });
+
+test('executor tolerates unrelated updates and rebinds a replaced live control',async()=>{
+  const b=new BrowserAdapter();try {
+    await b.open(url,true);const page=(b as any).page;
+    let s=await b.observe();const input=s.nodes.find(n=>n.role==='textbox'&&n.name==='Search catalogue')!;
+    await page.evaluate(()=>{document.querySelector('#result')!.textContent='Unrelated update';const el=document.querySelector('#query')!;el.replaceWith(el.cloneNode(true));});
+    const result=await b.act({id:'fill',op:'fill',target:input.id,label:'Search'},s,'Camry');
+    assert.ok(result?.rebound);assert.notEqual(result?.target,input.id);assert.equal(await page.locator('#query').inputValue(),'Camry');
+    s=await b.observe();const link=s.nodes.find(n=>n.name==='Open listing')!;
+    await page.evaluate(()=>{document.querySelector('article p')!.textContent='Price changed';});
+    await assert.rejects(b.act({id:'click',op:'click',target:link.id,label:'Open'},s),StaleObservation);
+    assert.equal((await b.observe()).tabs.length,1);
+  }finally{await b.close();}
+});

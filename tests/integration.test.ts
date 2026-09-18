@@ -30,7 +30,7 @@ test('dashboard protects task data and renders on desktop and mobile',async()=>{
 });
 test('MCP initializes, lists all tools and returns configuration without credentials',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'jev-mcp-'));
-  const transport=new StdioClientTransport({command:process.execPath,args:[fileURLToPath(new URL('../src/mcp.js',import.meta.url))],env:{...Object.fromEntries(Object.entries(process.env).filter((x):x is [string,string]=>typeof x[1]==='string')),JEV_DATA_DIR:dir,OPENROUTER_API_KEY:''}});
+  const transport=new StdioClientTransport({command:process.execPath,args:[fileURLToPath(new URL('../src/mcp.js',import.meta.url))],env:{...Object.fromEntries(Object.entries(process.env).filter((x):x is [string,string]=>typeof x[1]==='string')),JEV_DATA_DIR:dir,JEV_EPHEMERAL:'1',OPENROUTER_API_KEY:''}});
   const client=new Client({name:'integration-test',version:'1.0.0'});
   try{await client.connect(transport);const list=await client.listTools();assert.equal(list.tools.length,8);assert.ok(list.tools.some(t=>t.name==='jev_run'));const status=await client.callTool({name:'jev_status',arguments:{}});const payload=JSON.parse((status.content as any)[0].text);assert.equal(payload.configured,false);assert.ok(payload.dashboard.startsWith('http://127.0.0.1:'));}finally{await client.close();await rm(dir,{recursive:true,force:true});}
 });

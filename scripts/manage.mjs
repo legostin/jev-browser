@@ -54,7 +54,7 @@ export async function smoke(release) {
   const data = await mkdtemp(join(tmpdir(), 'jev-install-check-'));
   const client = new Client({ name: 'jev-updater-check', version: '1.0.0' });
   const transport = new StdioClientTransport({ command: process.execPath, args: [join(release, 'scripts/mcp-launcher.mjs')],
-    cwd: tmpdir(), env: { ...process.env, JEV_DATA_DIR: data, JEV_AUTO_UPDATE: '0' }, stderr: 'pipe' });
+    cwd: tmpdir(), env: { ...process.env, JEV_DATA_DIR: data, JEV_AUTO_UPDATE: '0', JEV_EPHEMERAL: '1' }, stderr: 'pipe' });
   // Drain, but never include server diagnostics (or credentials) in installer output.
   transport.stderr?.resume();
   let timer;
@@ -113,7 +113,7 @@ export async function update(root, automatic = false, dependencies = { run, stag
         await activate(root, release, revision);
       }
       await atomicJSON(join(root, 'update-status.json'), { checkedAt: Date.now(), outcome: revision === state.revision ? 'current' : 'updated', revision });
-      console.log(revision === state.revision ? 'JEV уже обновлён.' : 'JEV обновлён. Новая версия включится при следующем запуске MCP. Расширение Chrome: нажмите Reload.');
+      console.log(revision === state.revision ? 'JEV уже обновлён.' : 'JEV обновлён. Завершите или приостановите задачи, затем jev service restart и перезапуск MCP. Расширение Chrome: нажмите Reload.');
     } catch (error) {
       // Never persist raw subprocess error output: it may include credential helper details.
       await atomicJSON(join(root, 'update-status.json'), { checkedAt: Date.now(), outcome: 'failed' });
@@ -138,7 +138,7 @@ export async function configure() {
   const temp = `${config}.${randomUUID()}.tmp`;
   await writeFile(temp, `${lines.join('\n').trim()}\nOPENROUTER_API_KEY=${key}\n`, { mode: 0o600 });
   await rename(temp, config);
-  console.log('Ключ сохранён. Перезапустите MCP / начните новую задачу Codex.');
+  console.log('Ключ сохранён. Выполните jev service restart после завершения или паузы задач; затем подключите вкладку снова.');
 }
 export async function main(root, args) {
   const [command, value] = args;
@@ -154,7 +154,7 @@ export async function main(root, args) {
     const temporary=`${config}.${randomUUID()}.tmp`;
     await writeFile(temporary,`${lines.join('\n').trim()}\nJEV_MIN_CONFIDENCE=${threshold}\n`,{mode:0o600});
     await rename(temporary,config);
-    console.log(`Порог новых задач: ${threshold}. Перезапустите MCP. Текущие задачи сохраняют свой порог.`);return;
+    console.log(`Порог новых задач: ${threshold}. Выполните jev service restart после завершения или паузы задач. Текущие задачи сохраняют свой порог.`);return;
   }
   if (command === 'status') {
     console.log(JSON.stringify({ ...await json(join(root, 'state.json')), ...await json(join(root, 'settings.json')),
@@ -174,11 +174,11 @@ export async function main(root, args) {
     await activate(root, release, state.previous);
     const settings = await json(join(root, 'settings.json'));
     await atomicJSON(join(root, 'settings.json'), { ...settings, autoUpdate: false });
-    console.log('Предыдущая версия выбрана. Автообновление выключено. Перезапустите MCP.');
+    console.log('Предыдущая версия выбрана. Автообновление выключено. Выполните jev service restart после завершения или паузы задач.');
   });
-  if (['doctor', 'serve'].includes(command)) {
+  if (['doctor', 'serve', 'service', 'run'].includes(command)) {
     const release = await realpath(join(root, 'current'));
-    execFileSync(process.execPath, [join(release, 'dist/src/cli.js'), command], {cwd:release,stdio:'inherit'}); return;
+    execFileSync(process.execPath, [join(release, 'dist/src/cli.js'), ...args], {cwd:release,stdio:'inherit'}); return;
   }
-  throw new Error('Команды: status, configure, confidence 0..1, update, auto-update on|off, rollback, doctor, serve');
+  throw new Error('Команды: status, configure, confidence 0..1, update, auto-update on|off, rollback, doctor, serve, service start|status|stop|restart');
 }

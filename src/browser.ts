@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 import type { Snapshot, FrameState, Action, UINode } from './schema.js';
 import type { ExtensionBridge } from './extension.js';
 
-export class StaleObservation extends Error {}
+import { validateAction, StaleObservation } from './action-guard.js';
+export { StaleObservation } from './action-guard.js';
 export const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex').slice(0, 24);
 export function httpUrl(value: string): string {
   const url = new URL(value);
@@ -128,9 +129,9 @@ export class BrowserAdapter {
     return { version:digest({url, semantics, tabs}), observedAt:new Date().toISOString(), pageId:this.pageIds.get(this.page)!,
       url, title, tabs, frames, nodes, limitations };
   }
-  async act(action: Action, observed: Snapshot, text?: string) {
+  async act(action: Action, observed: Snapshot, text?: string):Promise<void|{target:string;rebound:boolean}> {
     const current = await this.observe();
-    if (current.version !== observed.version) throw new StaleObservation('Interface changed before execution.');
+    const validated=validateAction(action,observed,current);
     if (action.op === 'wait') { await this.page.waitForTimeout(350); return; }
     if (action.op === 'switch_tab') {
       const p = this.pages.get(action.argument!);
@@ -138,7 +139,7 @@ export class BrowserAdapter {
       this.page = p; return;
     }
     if (action.op === 'back') { await this.page.goBack({waitUntil:'domcontentloaded', timeout:10000}); return; }
-    const node = current.nodes.find(n => n.id === action.target);
+    const node = validated;
     if (!node) throw new StaleObservation('Observed node is no longer available.');
     const capability = action.op === 'reveal' ? null : action.op;
     if (capability && !node.capabilities.includes(capability)) throw new Error('Operation is not supported by this observed node.');
@@ -182,6 +183,7 @@ export class BrowserAdapter {
       }
     } finally { await handle.dispose(); }
     await this.page.waitForTimeout(100);
+    return {target:node.id,rebound:node.id!==action.target};
   }
   async close() {
     if (this.attached) for (const page of this.pages.values()) {if(!this.userPages.has(page))await page.close().catch(() => {});}

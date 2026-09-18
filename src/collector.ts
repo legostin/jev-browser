@@ -51,7 +51,7 @@ export function collect(frame: string, limit = 4000) {
     const root = e === document.documentElement;
     const scrollable = root || ((e.scrollHeight > e.clientHeight + 2 || e.scrollWidth > e.clientWidth + 2)
       && /auto|scroll/.test(css.overflow + css.overflowY + css.overflowX));
-    const nativeRole = getRole(e);
+    const nativeRole = getRole(e) || (e.tagName==='FORM'?'form':null);
     const isFrame = e.matches('iframe,frame');
     const isCanvas = e.tagName === 'CANVAS';
     const directText = clean([...e.childNodes].filter(n => n.nodeType === Node.TEXT_NODE).map(n => n.textContent).join(' '));
@@ -75,7 +75,7 @@ export function collect(frame: string, limit = 4000) {
       if (!name && e.matches('input,textarea')) name = clean(e.getAttribute('placeholder'), 400);
       const states: UINode['states'] = { disabled, readonly, sensitive, required: !!input.required,
         invalid: e.getAttribute('aria-invalid') === 'true' || (input.validity ? !input.validity.valid : false),
-        busy: e.getAttribute('aria-busy') === 'true' };
+        focused: e === (e.getRootNode() as Document | ShadowRoot).activeElement, busy: e.getAttribute('aria-busy') === 'true' };
       if (sensitive && editable) states.filled = !!input.value;
       if (e.matches('input[type="checkbox"],input[type="radio"]')) states.checked = input.indeterminate ? 'mixed' : input.checked;
       else if (e.hasAttribute('aria-checked')) states.checked = e.getAttribute('aria-checked') === 'mixed' ? 'mixed' : e.getAttribute('aria-checked') === 'true';

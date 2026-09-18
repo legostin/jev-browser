@@ -8,26 +8,32 @@ import { TaskInput, TaskRequest, type SecretDescriptor, type TaskRecord, type Ac
 import { ExtensionBridge } from './extension.js';
 import { actionContext, beginBrowserSession, rememberActionResult, rememberObservation } from './journey.js';
 
-interface Live { browser:BrowserAdapter; controller:AbortController; promise?:Promise<void>; focus?:string; index:number; opened?:boolean; advanced?:boolean; secretBusy?:boolean }
+interface Live { browser:BrowserAdapter; controller:AbortController; promise?:Promise<void>; focus?:string; index:number; opened?:boolean; advanced?:boolean; secretBusy?:boolean; decisionSnapshot?:Snapshot }
 export class TaskManager extends EventEmitter {
   readonly tasks = new Map<string,TaskRecord>();
   readonly extension = new ExtensionBridge();
   private live = new Map<string,Live>();
   currentTaskId?:string;
+  private currentSessions=new Map<string,string>();
+  currentFor(sessionId:string){return this.currentSessions.get(sessionId);}
+  private setCurrent(task:TaskRecord){this.currentTaskId=task.id;if(task.sessionId)this.currentSessions.set(task.sessionId,task.id);}
+  assertOwner(id:string,sessionId:string){const task=this.get(id);if(task.sessionId&&task.sessionId!==sessionId)throw new Error('This task belongs to another conversation. Continue your own task or explicitly share its sessionId.');return task;}
+  async claim(id:string,sessionId:string){const task=this.assertOwner(id,sessionId);if(!task.sessionId){task.sessionId=sessionId;await this.save(task);}this.setCurrent(task);}
   private starting=false;
   private secrets = new Map<string,(SecretDescriptor & {text:string})[]>();
   constructor(readonly store = new TaskStore(), private provider:DecisionProvider = new JevProvider(), private browserFactory?: (input:TaskInput)=>BrowserAdapter) { super(); }
-  async init() { for (const record of await this.store.load()) this.tasks.set(record.id,record); }
+  async init() { for (const record of (await this.store.load()).sort((a,b)=>a.updatedAt.localeCompare(b.updatedAt))) {this.tasks.set(record.id,record);this.setCurrent(record);} }
   get(id:string) { const t=this.tasks.get(id); if(!t) throw new Error('Task not found.'); return t; }
   list() { return [...this.tasks.values()].map(t=>({id:t.id,goal:t.input.goal,status:t.status,steps:t.steps,message:t.message,updatedAt:t.updatedAt,evidenceCount:t.evidence.length})).reverse(); }
   private async save(task:TaskRecord) { task.updatedAt=new Date().toISOString(); await this.store.save(task); this.emit('change',task.id); }
-  async runOrResume(raw:unknown, options:{taskId?:string;newTask?:boolean}={}) {
+  async runOrResume(raw:unknown, options:{taskId?:string;newTask?:boolean;sessionId?:string}={}) {
     const input=TaskRequest.parse(raw);
     if(options.taskId&&options.newTask) throw new Error('Choose taskId or newTask, not both.');
-    const id=options.taskId || (!options.newTask?this.currentTaskId:undefined);
-    if(!id) return this.start(input);
-    const task=this.get(id);
-    if(task.status==='cancelled') return this.start(input);
+    const id=options.taskId || (!options.newTask?(options.sessionId?this.currentFor(options.sessionId):this.currentTaskId):undefined);
+    if(!id) return this.start(input,options.sessionId);
+    const task=options.sessionId?this.assertOwner(id,options.sessionId):this.get(id);
+    if(task.status==='cancelled') return this.start(input,options.sessionId);
+    if(options.sessionId&&!task.sessionId)await this.claim(id,options.sessionId);
     if(task.input.browser!==input.browser) throw new Error(`Task ${id} uses ${task.input.browser}. To explicitly change browser mode, use newTask:true.`);
     const {secrets,...plain}=input;
     if(task.status==='running') {
@@ -51,20 +57,21 @@ export class TaskManager extends EventEmitter {
       changed(id);if(signal?.aborted)aborted();
     });
   }
-  async start(raw:unknown) {
+  async start(raw:unknown, sessionId?:string) {
     if(this.starting) throw new Error('A task is already being started. Read jev_status; do not create another browser.');
     this.starting=true;
-    try { return await this.startNew(raw); } finally { this.starting=false; }
+    try { return await this.startNew(raw,sessionId); } finally { this.starting=false; }
   }
-  private async startNew(raw:unknown) {
+  private async startNew(raw:unknown, sessionId?:string) {
     const {secrets,...input}=TaskRequest.parse(raw); httpUrl(input.url);
     let inherited:Live|undefined, previousId:string|undefined;
     if(input.browser==='extension') {
       if(!this.extension.status().connected) throw new Error('Connect your Chrome tab using the private dashboard link from jev_status. No separate browser was opened. Use browser=isolated only when explicitly requested.');
-      for(const [id,live] of this.live) if(this.get(id).input.browser==='extension'&&this.get(id).status==='completed'&&!live.browser.isConnected())this.live.delete(id);
+      for(const [id,live] of this.live) if(this.get(id).input.browser==='extension'&&live.opened&&!live.browser.isConnected()&&!this.extension.status().busy)this.live.delete(id);
       const owner=[...this.live].find(([id])=>this.get(id).input.browser==='extension');
       if(owner) {
         const [id,live]=owner;
+        if(sessionId&&this.get(id).sessionId&&this.get(id).sessionId!==sessionId)throw new Error('The shared Chrome tab belongs to another conversation. Disconnect and explicitly share a tab for this conversation.');
         if(this.get(id).status!=='completed'||live.secretBusy) throw new Error(`Chrome belongs to task ${id}. Use jev_resume/jev_wait for that task instead of starting another.`);
         if(live.promise) await live.promise;
         if(live.browser.isConnected()) { inherited=live;previousId=id; }
@@ -72,11 +79,11 @@ export class TaskManager extends EventEmitter {
     }
     if ([...this.tasks.values()].filter(t=>t.status==='running').length>=3) throw new Error('Three tasks are already running. Pause one first.');
     const now=new Date().toISOString();
-    const task:TaskRecord={id:randomUUID(),input,status:'running',createdAt:now,updatedAt:now,steps:0,requests:0,elapsedMs:0,cost:0,inputTokens:0,history:[],evidence:[],message:'Opening browser…'};
+    const task:TaskRecord={id:randomUUID(),sessionId,input,status:'running',createdAt:now,updatedAt:now,steps:0,requests:0,elapsedMs:0,cost:0,inputTokens:0,history:[],evidence:[],message:'Opening browser…'};
     if(secrets) this.secrets.set(task.id,secrets.map((s,i)=>({...s,id:`s${i+1}`,origin:new URL(s.origin).origin})));
     this.tasks.set(task.id,task); await this.save(task);
     if(inherited&&previousId) {this.live.delete(previousId);this.live.set(task.id,{...inherited,index:0,focus:undefined,advanced:false});beginBrowserSession(task);}
-    this.currentTaskId=task.id;this.launch(task); return task;
+    this.setCurrent(task);this.launch(task); return task;
   }
   private launch(task:TaskRecord) {
     let old=this.live.get(task.id);
@@ -107,7 +114,8 @@ export class TaskManager extends EventEmitter {
         rememberObservation(task,snapshot,'before_decision');
         task.snapshot=snapshot;
         if(live.focus&&!snapshot.nodes.some(n=>n.id===live.focus)) {live.focus=undefined;live.index=0;}
-        task.projection=project(snapshot,live.focus,live.index,live.advanced,this.secrets.get(task.id)?.map(({id,label,origin})=>({id,label,origin})));
+        task.projection=project(snapshot,live.focus,live.index,live.advanced,this.secrets.get(task.id)?.map(({id,label,origin})=>({id,label,origin})),live.decisionSnapshot);
+        live.decisionSnapshot=snapshot;
         task.message=`Choosing next step · ${snapshot.title || snapshot.url}`;
         await this.save(task);
         const decision=await this.provider.choose(task.projection,task,signal);
@@ -176,7 +184,7 @@ export class TaskManager extends EventEmitter {
         // Persist intent first. A failure after browser input is uncertain and is never automatically retried.
         const entry=this.log(task,a,snapshot,'executing',decision.confidence,a.op==='fill_secret'?undefined:text);await this.save(task);
         if(signal.aborted||task.status!=='running') {task.history.at(-1)!.outcome='paused before execution';break;}
-        try { await live.browser.act(a,snapshot,text); }
+        try { const executed=await live.browser.act(a,snapshot,text);if(executed){Object.assign(entry,{executionTarget:executed.target,rebound:executed.rebound});} }
         catch(error) {
           if(error instanceof StaleObservation) {task.history.at(-1)!.outcome='stale; not executed';await this.save(task);continue;}
           task.history.at(-1)!.outcome='execution uncertain; inspect before resuming';if(a.op==='fill_secret')throw new Error('Private input result is uncertain. Inspect before resuming.');throw error;
@@ -248,7 +256,7 @@ export class TaskManager extends EventEmitter {
     task.input=TaskInput.parse({...task.input,...updates});httpUrl(task.input.url);
     if(secrets) this.secrets.set(id,secrets.map((s,i)=>({...s,id:`s${i+1}`,origin:new URL(s.origin).origin})));
     task.pending=undefined;task.verification=undefined;task.status='running';task.message='Resuming…';
-    await this.save(task);this.currentTaskId=id;this.launch(task);return task;
+    await this.save(task);this.setCurrent(task);this.launch(task);return task;
   }
   async cancel(id:string) {
     await this.pause(id); const task=this.get(id),live=this.live.get(id);

@@ -36,7 +36,7 @@ export interface UINode {
   tag: string; source: 'semantic' | 'layout';
   value?: string; href?: string; inputType?: string; autocomplete?: string;
   states: { disabled: boolean; readonly: boolean; checked?: boolean | 'mixed'; expanded?: boolean;
-    selected?: boolean; required?: boolean; invalid?: boolean; sensitive?: boolean; filled?: boolean; busy?: boolean };
+    selected?: boolean; required?: boolean; invalid?: boolean; sensitive?: boolean; filled?: boolean; focused?: boolean; busy?: boolean };
   relations: Record<string, string[]>;
   bounds: { x: number; y: number; width: number; height: number };
   inViewport: boolean; obscured: boolean;
@@ -60,6 +60,8 @@ export interface Projection {
   version: string; page: { url: string; title: string }; tabs: Snapshot['tabs'];
   regions: { id: string; role: string; name: string; nodes: number }[];
   nodes: UINode[]; actions: Action[];
+  groups?:{id:string;role:string;name:string;total:number;included:number;complete:boolean}[];
+  changes?:ReturnType<typeof import('./regions.js').interfaceChanges>;
   coverage: { total: number; included: number; page: number; pages: number; limitations: string[] };
 }
 export interface Decision {
@@ -88,10 +90,10 @@ export interface StepContext {
     field?:{before?:string;after?:string;checkedBefore?:boolean|'mixed';checkedAfter?:boolean|'mixed'}};
 }
 export interface TaskRecord {
-  id: string; input: TaskInput; status: Status; createdAt: string; updatedAt: string;
+  id: string; sessionId?:string; input: TaskInput; status: Status; createdAt: string; updatedAt: string;
   steps: number; requests: number; elapsedMs: number; cost: number; inputTokens: number;
   history: { step: number; op: string; target?: string; label: string; url: string; version: string;
-    outcome: string; confidence?: number | null; at: string; context?:StepContext }[];
+    outcome: string; confidence?: number | null; at: string; executionTarget?:string; rebound?:boolean; context?:StepContext }[];
   browserMemory?:BrowserMemory;
   evidence: Evidence[]; snapshot?: Snapshot; projection?: Projection;
   message: string; pending?: { kind: 'text' | 'secret' | 'review' | 'blocked'; target?: string; version?: string; context: string };

@@ -1,19 +1,21 @@
 import type { Snapshot, Projection, Action, UINode, TaskInput, SecretDescriptor } from './schema.js';
 
+import { regionPages, interfaceChanges } from './regions.js';
 export function descendants(nodes: UINode[], root: string): UINode[] {
   const ids = new Set([root]);
   // Collector order is parent-first, including attached frame roots.
   for (const n of nodes) if (n.parent && ids.has(n.parent)) ids.add(n.id);
   return nodes.filter(n => ids.has(n.id));
 }
-export function project(snapshot: Snapshot, focus?: string, index = 0, advanced = false, secrets: SecretDescriptor[] = []): Projection {
+export function project(snapshot: Snapshot, focus?: string, index = 0, advanced = false, secrets: SecretDescriptor[] = [], previous?:Snapshot): Projection {
   const scope = focus ? descendants(snapshot.nodes, focus) : snapshot.nodes;
   // Keep layout wrappers as ancestor context, without spending a decision on each empty wrapper.
   const all = scope.filter(n=>n.source!=='layout'||n.capabilities.length||n.name||n.text||n.id===focus);
   const focusedSelect = snapshot.nodes.find(n=>n.id===focus && n.options);
-  const pageSize = 24, pages = Math.max(1, Math.ceil((focusedSelect ? focusedSelect.options!.length : all.length) / pageSize));
+  const grouped=regionPages(all,24,64,scope);
+  const pageSize = 24, pages = focusedSelect?Math.max(1,Math.ceil(focusedSelect.options!.length/pageSize)):grouped.pages.length;
   index = Math.max(0, Math.min(index, pages - 1));
-  const selected = focusedSelect ? [focusedSelect] : all.slice(index * pageSize, (index + 1) * pageSize);
+  const selected = focusedSelect ? [focusedSelect] : grouped.pages[index];
   const lookup = new Map(snapshot.nodes.map(n => [n.id,n]));
   const included = new Set(selected.map(n => n.id));
   for (const node of selected) {
@@ -50,7 +52,7 @@ export function project(snapshot: Snapshot, focus?: string, index = 0, advanced 
           if (possible) add('scroll',`Scroll ${d} in ${label}`,n.id,d);
       }
     }
-    if (['article','listitem','row','group','region','main','table','list','dialog','form'].includes(n.role)) {
+    if (['article','listitem','row','group','region','main','table','list','dialog','alertdialog','form'].includes(n.role)) {
       add('inspect',`Read inside ${label}`,n.id);
       add('collect',`Save observed content and links from ${label}`,n.id);
     }
@@ -67,9 +69,12 @@ export function project(snapshot: Snapshot, focus?: string, index = 0, advanced 
   const regions = snapshot.nodes.filter(n => ['main','navigation','banner','contentinfo','dialog','form','region','table','list'].includes(n.role));
   const limitations = [...snapshot.limitations];
   if(scope.length>all.length) limitations.push(`${scope.length-all.length} empty layout wrappers are skipped as primary candidates; ancestor context is retained.`);
+  if([...grouped.groups.values()].some(nodes=>nodes.length>64)) limitations.push('Large semantic regions exceed 64 primary nodes and are split; parent context and coverage are retained.');
   if (regions.length > 60) limitations.push('Region overview shows the first 60 regions; remaining content is accessible through slices.');
   return { version:snapshot.version, page:{url:snapshot.url,title:snapshot.title},tabs:snapshot.tabs,
     regions:regions.slice(0,60).map(n => ({id:n.id,role:n.role,name:n.name,nodes:descendants(snapshot.nodes,n.id).length})),
+    changes:interfaceChanges(previous,snapshot),
+    groups:[...grouped.groups].filter(([,nodes])=>nodes.some(n=>selected.some(s=>s.id===n.id))).map(([id,nodes])=>({id,role:lookup.get(id)!.role,name:lookup.get(id)!.name,total:nodes.length,included:nodes.filter(n=>included.has(n.id)).length,complete:nodes.every(n=>included.has(n.id))})),
     nodes:snapshot.nodes.filter(n => included.has(n.id)).map(n=>({...n,
       options:n.options?.slice(n.id===focusedSelect?.id?index*pageSize:0,n.id===focusedSelect?.id?(index+1)*pageSize:3)})), actions,
     coverage:{total:focusedSelect?.options?.length??all.length,included:focusedSelect?Math.min(pageSize,focusedSelect.options!.length-index*pageSize):selected.length,page:index+1,pages,limitations} };
