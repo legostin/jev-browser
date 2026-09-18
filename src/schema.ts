@@ -1,9 +1,15 @@
 import { z } from 'zod';
 
+export function defaultConfidence() {
+  const value=process.env.JEV_MIN_CONFIDENCE?.trim();
+  const threshold=value?Number(value):0.55;
+  if(!Number.isFinite(threshold)||threshold<0||threshold>1) throw new Error('JEV_MIN_CONFIDENCE must be between 0 and 1.');
+  return threshold;
+}
 export const TaskInput = z.object({
   goal: z.string().min(1).max(8000),
   url: z.string().url(),
-  browser: z.enum(['isolated','extension']).default('isolated'),
+  browser: z.enum(['isolated','extension']).default('extension'),
   plan: z.array(z.string().min(1).max(600)).max(12).default([]),
   values: z.array(z.object({ label: z.string().min(1).max(200), text: z.string().max(4000) })).max(50).default([]),
   checks: z.array(z.object({
@@ -13,7 +19,7 @@ export const TaskInput = z.object({
     .refine(c=>c.kind!=='collected_count'||(/^[1-9]\d*$/.test(c.value)),'collected_count needs a positive integer')).max(30).default([]),
   maxSteps: z.number().int().min(1).max(300).default(60),
   maxSeconds: z.number().int().min(10).max(3600).default(300),
-  minConfidence: z.number().min(0).max(1).default(0.55),
+  minConfidence: z.number().min(0).max(1).default(defaultConfidence),
   headless: z.boolean().default(false)
 }).strict();
 export type TaskInput = z.infer<typeof TaskInput>;

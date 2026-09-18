@@ -11,7 +11,7 @@ const url=`http://127.0.0.1:${(server.address() as any).port}`;
 const manager=new TaskManager(new TaskStore('artifacts/live-tasks'));
 let last='';manager.on('change',id=>{const t=manager.get(id);const line=`${t.status}: ${t.message}`;if(line!==last){console.log(line);last=line;}});
 try{
-  const task=await manager.start({goal:'Search for the product Orion, enable Only available, and submit the search. Save the matching product card as evidence. Finish once the applied search and saved card are confirmed. Do not open the product detail link.',url,headless:true,
+  const task=await manager.start({browser:'isolated',goal:'Search for the product Orion, enable Only available, and submit the search. Save the matching product card as evidence. Finish once the applied search and saved card are confirmed. Do not open the product detail link.',url,headless:true,
     values:[{label:'Product name',text:'Orion'}],checks:[{kind:'text_contains',value:'Search applied: Orion, available only'},{kind:'collected_count',value:'1'}],maxSteps:14,maxSeconds:120});
   while(manager.get(task.id).status==='running') await new Promise(r=>setTimeout(r,200));
   const result=manager.get(task.id);

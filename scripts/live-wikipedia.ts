@@ -6,7 +6,7 @@ loadConfig();
 const manager=new TaskManager(new TaskStore('artifacts/wikipedia-tasks'));
 let last='';manager.on('change',id=>{const t=manager.get(id);const line=`${t.status}: ${t.message}`;if(line!==last){console.log(line);last=line;}});
 try {
-  const t=await manager.start({goal:'Найди и открой статью Toyota Camry в русской Википедии. Не редактируй страницы.',
+  const t=await manager.start({browser:'isolated',goal:'Найди и открой статью Toyota Camry в русской Википедии. Не редактируй страницы.',
     url:'https://ru.wikipedia.org/wiki/Заглавная_страница',headless:true,
     plan:['Найти поле поиска и ввести Toyota Camry','Выполнить поиск','Открыть статью Toyota Camry и проверить заголовок'],
     values:[{label:'Поисковый запрос для поля «Искать в Википедии»',text:'Toyota Camry'}],

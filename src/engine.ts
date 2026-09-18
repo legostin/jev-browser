@@ -13,22 +13,76 @@ export class TaskManager extends EventEmitter {
   readonly tasks = new Map<string,TaskRecord>();
   readonly extension = new ExtensionBridge();
   private live = new Map<string,Live>();
+  currentTaskId?:string;
+  private starting=false;
   private secrets = new Map<string,(SecretDescriptor & {text:string})[]>();
   constructor(readonly store = new TaskStore(), private provider:DecisionProvider = new JevProvider(), private browserFactory?: (input:TaskInput)=>BrowserAdapter) { super(); }
   async init() { for (const record of await this.store.load()) this.tasks.set(record.id,record); }
   get(id:string) { const t=this.tasks.get(id); if(!t) throw new Error('Task not found.'); return t; }
   list() { return [...this.tasks.values()].map(t=>({id:t.id,goal:t.input.goal,status:t.status,steps:t.steps,message:t.message,updatedAt:t.updatedAt,evidenceCount:t.evidence.length})).reverse(); }
   private async save(task:TaskRecord) { task.updatedAt=new Date().toISOString(); await this.store.save(task); this.emit('change',task.id); }
+  async runOrResume(raw:unknown, options:{taskId?:string;newTask?:boolean}={}) {
+    const input=TaskRequest.parse(raw);
+    if(options.taskId&&options.newTask) throw new Error('Choose taskId or newTask, not both.');
+    const id=options.taskId || (!options.newTask?this.currentTaskId:undefined);
+    if(!id) return this.start(input);
+    const task=this.get(id);
+    if(task.status==='cancelled') return this.start(input);
+    if(task.input.browser!==input.browser) throw new Error(`Task ${id} uses ${task.input.browser}. To explicitly change browser mode, use newTask:true.`);
+    const {secrets,...plain}=input;
+    if(task.status==='running') {
+      if(JSON.stringify(task.input)!==JSON.stringify(plain)||secrets?.length) throw new Error(`Task ${id} is running. Use jev_pause, then jev_resume with updates. No new browser was opened.`);
+      return task;
+    }
+    if(task.status==='completed' && JSON.stringify(task.input)===JSON.stringify(plain) && !secrets?.length) return task;
+    return this.resume(id,{...input,maxSteps:Math.min(300,task.steps+input.maxSteps),maxSeconds:Math.min(3600,Math.ceil(task.elapsedMs/1000)+input.maxSeconds)});
+  }
+  async wait(id:string, timeoutMs=25000, signal?:AbortSignal) {
+    const task=this.get(id);
+    if(task.status!=='running'||timeoutMs===0) return task;
+    if(signal?.aborted) throw new Error('Wait cancelled. The task remains available.');
+    return new Promise<TaskRecord>((resolve,reject)=>{
+      const cleanup=()=>{clearTimeout(timer);this.off('change',changed);signal?.removeEventListener('abort',aborted);};
+      const finish=()=>{cleanup();resolve(this.get(id));};
+      const changed=(changedId:string)=>{if(changedId===id&&this.get(id).status!=='running')finish();};
+      const aborted=()=>{cleanup();reject(new Error('Wait cancelled. Use jev_pause or jev_cancel to stop execution.'));};
+      const timer=setTimeout(finish,Math.max(0,Math.min(45000,timeoutMs)));
+      this.on('change',changed);signal?.addEventListener('abort',aborted,{once:true});
+      changed(id);if(signal?.aborted)aborted();
+    });
+  }
   async start(raw:unknown) {
+    if(this.starting) throw new Error('A task is already being started. Read jev_status; do not create another browser.');
+    this.starting=true;
+    try { return await this.startNew(raw); } finally { this.starting=false; }
+  }
+  private async startNew(raw:unknown) {
     const {secrets,...input}=TaskRequest.parse(raw); httpUrl(input.url);
+    let inherited:Live|undefined, previousId:string|undefined;
+    if(input.browser==='extension') {
+      if(!this.extension.status().connected) throw new Error('Connect your Chrome tab using the private dashboard link from jev_status. No separate browser was opened. Use browser=isolated only when explicitly requested.');
+      for(const [id,live] of this.live) if(this.get(id).input.browser==='extension'&&this.get(id).status==='completed'&&!live.browser.isConnected())this.live.delete(id);
+      const owner=[...this.live].find(([id])=>this.get(id).input.browser==='extension');
+      if(owner) {
+        const [id,live]=owner;
+        if(this.get(id).status!=='completed'||live.secretBusy) throw new Error(`Chrome belongs to task ${id}. Use jev_resume/jev_wait for that task instead of starting another.`);
+        if(live.promise) await live.promise;
+        if(live.browser.isConnected()) { inherited=live;previousId=id; }
+      }
+    }
     if ([...this.tasks.values()].filter(t=>t.status==='running').length>=3) throw new Error('Three tasks are already running. Pause one first.');
     const now=new Date().toISOString();
     const task:TaskRecord={id:randomUUID(),input,status:'running',createdAt:now,updatedAt:now,steps:0,requests:0,elapsedMs:0,cost:0,inputTokens:0,history:[],evidence:[],message:'Opening browser…'};
     if(secrets) this.secrets.set(task.id,secrets.map((s,i)=>({...s,id:`s${i+1}`,origin:new URL(s.origin).origin})));
-    this.tasks.set(task.id,task); await this.save(task); this.launch(task); return task;
+    this.tasks.set(task.id,task); await this.save(task);
+    if(inherited&&previousId) {this.live.delete(previousId);this.live.set(task.id,{...inherited,index:0,focus:undefined,advanced:false});beginBrowserSession(task);}
+    this.currentTaskId=task.id;this.launch(task); return task;
   }
   private launch(task:TaskRecord) {
-    const old=this.live.get(task.id);
+    let old=this.live.get(task.id);
+    if(old?.opened && task.input.browser==='extension' && !old.browser.isConnected() && this.extension.status().connected) {
+      this.live.delete(task.id);old=undefined;
+    }
     const live:Live=old?{...old,controller:new AbortController()}:{browser:this.browserFactory?.(task.input)??new BrowserAdapter(task.input.browser==='extension'?this.extension:undefined),controller:new AbortController(),index:0};
     this.live.set(task.id,live);
     live.promise=this.run(task,live).finally(()=>{live.promise=undefined;});
@@ -183,13 +237,18 @@ export class TaskManager extends EventEmitter {
     if(this.live.get(id)?.secretBusy) throw new Error('Private input is in progress.');
     if(task.status==='running') throw new Error('Pause before updating a running task.');
     if(task.status==='cancelled') throw new Error('Cancelled tasks cannot be resumed; start a new task.');
+    if(task.input.browser==='extension') {
+      if(!this.extension.status().connected) throw new Error('Reconnect your Chrome tab using jev_status before resuming. No separate browser was opened.');
+      const owner=[...this.live].find(([other,live])=>other!==id&&this.get(other).input.browser==='extension'&&(live.browser.isConnected()||this.get(other).status==='running'));
+      if(owner)throw new Error(`Chrome now belongs to task ${owner[0]}. Continue that task instead.`);
+    }
     if(this.live.get(id)?.promise) await this.live.get(id)!.promise;
     if(patch.browser && patch.browser!==(task.input.browser||'isolated'))throw new Error('Start a new task to change browser connection mode.');
     const {secrets,...updates}=TaskRequest.partial().parse(patch);
     task.input=TaskInput.parse({...task.input,...updates});httpUrl(task.input.url);
     if(secrets) this.secrets.set(id,secrets.map((s,i)=>({...s,id:`s${i+1}`,origin:new URL(s.origin).origin})));
     task.pending=undefined;task.verification=undefined;task.status='running';task.message='Resuming…';
-    await this.save(task);this.launch(task);return task;
+    await this.save(task);this.currentTaskId=id;this.launch(task);return task;
   }
   async cancel(id:string) {
     await this.pause(id); const task=this.get(id),live=this.live.get(id);

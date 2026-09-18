@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { TaskManager } from './engine.js';
 import { dashboard } from './http.js';
+import { defaultConfidence } from './schema.js';
 import { loadConfig } from './config.js';
 
 loadConfig();
@@ -8,7 +9,7 @@ const manager=new TaskManager();await manager.init();
 const command=process.argv[2]||'serve';
 if(command==='doctor') {
   console.log(JSON.stringify({node:process.versions.node,configured:!!process.env.OPENROUTER_API_KEY,
-    model:process.env.JEV_MODEL||'typesafe/jev-1.13',browser:process.env.JEV_CDP_URL?'local CDP':process.env.JEV_BROWSER_CHANNEL||'chrome',data:manager.store.directory},null,2));
+    minConfidence:defaultConfidence(),model:process.env.JEV_MODEL||'typesafe/jev-1.13',browser:process.env.JEV_CDP_URL?'local CDP':process.env.JEV_BROWSER_CHANNEL||'chrome',data:manager.store.directory},null,2));
 } else if(command==='serve'||command==='run') {
   const panel=await dashboard(manager,Number(process.env.JEV_PORT||0));
   console.log(`JEV Browser: ${panel.url}`);

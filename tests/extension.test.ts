@@ -65,6 +65,14 @@ test('real Chrome extension shares a selected tab, executes across navigation an
     assert.ok(result.history.find(h=>h.label.includes('Open details'))?.context?.observed?.openedTabs.length);
     assert.ok(result.history.some(h=>h.op==='fill'&&h.label.includes('Note')&&h.outcome==='executed'));
     await ui.locator('#title').filter({hasText:'Camry result'}).waitFor();await ui.setViewportSize({width:380,height:820});await mkdir('artifacts',{recursive:true});await ui.screenshot({path:'artifacts/chrome-extension.png',fullPage:true});
-    await m.cancel(task.id);assert.equal(selected.isClosed(),false);assert.ok(selected.url().includes('/result'));assert.equal(ctx.pages().some(p=>p.url().endsWith('/detail')),false);
+    const pageCount=ctx.pages().length;
+    const continuation=await m.runOrResume({goal:'Confirm the opened detail',url,browser:'extension',checks:[{kind:'url_contains',value:'/detail'}]});
+    assert.equal(continuation.id,task.id);await m.wait(task.id,15000);assert.equal(continuation.status,'completed',continuation.message);
+    assert.equal(ctx.pages().length,pageCount);
+    const next=await m.runOrResume({goal:'Another explicit task in the same tab',url,browser:'extension',checks:[{kind:'url_contains',value:'/detail'}]},{newTask:true});
+    assert.notEqual(next.id,task.id);await m.wait(next.id,15000);assert.equal(next.status,'completed',next.message);
+    assert.equal(ctx.pages().length,pageCount);assert.equal(m.extension.status().connected,true);
+    await m.cancel(task.id);assert.equal(selected.isClosed(),false);assert.equal(m.extension.status().connected,true);
+    await m.cancel(next.id);assert.equal(selected.isClosed(),false);assert.ok(selected.url().includes('/result'));assert.equal(ctx.pages().some(p=>p.url().endsWith('/detail')),false);
   }finally{await m.shutdown();await panel.close();await ctx?.close();await new Promise<void>(r=>fixture.close(()=>r()));await rm(dir,{recursive:true,force:true});}
 });

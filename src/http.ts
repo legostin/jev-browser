@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { TaskManager } from './engine.js';
-import { TaskRequest } from './schema.js';
+import { TaskRequest, defaultConfidence } from './schema.js';
 
 async function body(request:IncomingMessage) {
   const parts:Buffer[]=[];let size=0;
@@ -31,7 +31,7 @@ export async function dashboard(manager:TaskManager,port=0) {
       }
       const supplied=Buffer.from(String(request.headers['x-jev-token']||''));const expected=Buffer.from(token);
       if(supplied.length!==expected.length||!timingSafeEqual(supplied,expected)) return reply(401,{error:'Open the dashboard using its private launch link.'});
-      if(request.method==='GET'&&url.pathname==='/api/status') return reply(200,{configured:!!process.env.OPENROUTER_API_KEY,model:process.env.JEV_MODEL||'typesafe/jev-1.13',tasks:manager.list(),extension:manager.extension.status()});
+      if(request.method==='GET'&&url.pathname==='/api/status') return reply(200,{configured:!!process.env.OPENROUTER_API_KEY,model:process.env.JEV_MODEL||'typesafe/jev-1.13',tasks:manager.list(),defaults:{browser:"extension",minConfidence:defaultConfidence()},extension:manager.extension.status()});
       if(request.method==='POST'&&url.pathname==='/api/tasks') return reply(201,await manager.start(await body(request)));
       const match=url.pathname.match(/^\/api\/tasks\/([a-f0-9-]{36})(?:\/(pause|resume|cancel|secret))?$/);
       if(match) {

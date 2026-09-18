@@ -12,7 +12,7 @@
         "JEV_DATA_DIR",
         "JEV_BROWSER_CHANNEL",
         "JEV_CDP_URL",
-        "JEV_CONFIG_FILE"
+        "JEV_CONFIG_FILE", "JEV_MIN_CONFIDENCE"
       ]
     }
   }

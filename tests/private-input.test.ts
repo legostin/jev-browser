@@ -37,7 +37,7 @@ test('password uses private dashboard input, remains masked after reveal, then r
   const ui=await dashboard(manager);
   const link=new URL(ui.url),token=link.hash.slice(1);
   try {
-    const t=await manager.start({goal:'Sign into fixture',url,headless:true,checks:[{kind:'text_contains',value:'Fixture signed in'}]});
+    const t=await manager.start({browser:'isolated',goal:'Sign into fixture',url,headless:true,checks:[{kind:'text_contains',value:'Fixture signed in'}]});
     const pending=await settled(manager,t.id);
     assert.equal(pending.pending?.kind,'secret');
     const target=pending.pending!.target!;
@@ -73,7 +73,7 @@ test('private input rejects a changed page and sanitizes uncertain browser error
   browser.act=async(a,s)=>{if(changed){const {StaleObservation}=await import('../src/browser.js');throw new StaleObservation('changed');}inputs++;if(fail)throw new Error(`Browser internal call log ${secret}`);};
   const m=new TaskManager(new TaskStore(data),{async choose(p){const action=p.actions.find(a=>a.op==='request_secret')!;return {action,confidence:1,probabilities:{},latencyMs:0,usage:{inputTokens:0,cost:0}};},async text(){throw new Error('unused');}},()=>browser);
   try {
-    const t=await m.start({goal:'Login',url:snapshot.url});await settled(m,t.id);changed=true;
+    const t=await m.start({browser:'isolated',goal:'Login',url:snapshot.url});await settled(m,t.id);changed=true;
     await assert.rejects(m.fillSecret(t.id,field.id,secret),/Private input stopped/);assert.equal(inputs,0);
     changed=false;await m.resume(t.id);await settled(m,t.id);fail=true;
     await assert.rejects(m.fillSecret(t.id,field.id,secret),/Private input stopped/);
@@ -99,7 +99,7 @@ test('explicitly supplied secret fills automatically; JEV sees only the label; a
     },async text(){throw new Error('No LLM text selection for secrets');}
   },()=>browser);
   try {
-    const t=await m.start({goal:'Login to fixture',url:origin,headless:true,secrets:[{label:'My login password',text:secret,origin}],checks:[{kind:'text_contains',value:'Authenticated fixture'}]});
+    const t=await m.start({browser:'isolated',goal:'Login to fixture',url:origin,headless:true,secrets:[{label:'My login password',text:secret,origin}],checks:[{kind:'text_contains',value:'Authenticated fixture'}]});
     const done=await settled(m,t.id);
     assert.equal(done.status,'completed',done.message);assert.equal(fills,1);
     assert.equal(await (browser as any).page.locator('input').inputValue(),secret);

@@ -33,7 +33,7 @@ test('a complete autonomous chain fills, searches, collects and independently ve
   };
   const m=new TaskManager(new TaskStore(dir),provider);await m.init();
   try{
-    const task=await m.start({goal:'Find and save Toyota Camry 2026',url,headless:true,checks:[{kind:'text_contains',value:'Verified fixture result'},{kind:'collected_count',value:'1'}]});
+    const task=await m.start({browser:'isolated',goal:'Find and save Toyota Camry 2026',url,headless:true,checks:[{kind:'text_contains',value:'Verified fixture result'},{kind:'collected_count',value:'1'}]});
     const done=await stopped(m,task.id);assert.equal(done.status,'completed',done.message);assert.equal(done.evidence.length,1);
     assert.ok(done.history.some(h=>h.op==='fill'&&h.outcome==='executed'));assert.ok(done.history.some(h=>h.op==='click'&&h.outcome==='executed'));assert.ok(done.verification?.passed);
     await m.shutdown();const loaded=await new TaskStore(dir).load();assert.equal(loaded[0].evidence.length,1);assert.deepEqual(loaded[0].browserMemory,JSON.parse(JSON.stringify(done.browserMemory)));
@@ -47,7 +47,7 @@ test('DONE without independent checks is a review request, not success',async()=
   const dir=await mkdtemp(join(tmpdir(),'jev-done-'));
   const provider:DecisionProvider={async choose(p){return choice(p,p.actions.find(a=>a.op==='done')!);},async text(){return {text:null,usage};}};
   const m=new TaskManager(new TaskStore(dir),provider,()=>new FakeBrowser());
-  try{const t=await m.start({goal:'Do something',url:blank.url});const result=await stopped(m,t.id);assert.equal(result.status,'needs_review');assert.equal(result.verification?.passed,false);}finally{await m.shutdown();await rm(dir,{recursive:true,force:true});}
+  try{const t=await m.start({browser:'isolated',goal:'Do something',url:blank.url});const result=await stopped(m,t.id);assert.equal(result.status,'needs_review');assert.equal(result.verification?.passed,false);}finally{await m.shutdown();await rm(dir,{recursive:true,force:true});}
 });
 test('pause during a model request prevents a late decision from executing',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'jev-pause-'));let release!:()=>void,entered!:()=>void;
@@ -55,7 +55,7 @@ test('pause during a model request prevents a late decision from executing',asyn
   const browser=new FakeBrowser();
   const provider:DecisionProvider={async choose(p){entered();await wait;return choice(p,p.actions.find(a=>a.op==='wait')!);},async text(){return {text:null,usage};}};
   const m=new TaskManager(new TaskStore(dir),provider,()=>browser);
-  try{const t=await m.start({goal:'Wait for results',url:blank.url});await ready;const paused=m.pause(t.id);release();await paused;assert.equal(m.get(t.id).status,'paused');assert.equal(browser.actions,0);assert.equal(m.get(t.id).steps,0);}finally{release?.();await m.shutdown();await rm(dir,{recursive:true,force:true});}
+  try{const t=await m.start({browser:'isolated',goal:'Wait for results',url:blank.url});await ready;const paused=m.pause(t.id);release();await paused;assert.equal(m.get(t.id).status,'paused');assert.equal(browser.actions,0);assert.equal(m.get(t.id).steps,0);}finally{release?.();await m.shutdown();await rm(dir,{recursive:true,force:true});}
 });
 test('missing text creates a resumable input request and no browser mutation',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'jev-input-'));const browser=new FakeBrowser();
@@ -63,12 +63,12 @@ test('missing text creates a resumable input request and no browser mutation',as
   browser.observe=async()=>({...blank,nodes:[field]});
   const provider:DecisionProvider={async choose(p){return choice(p,p.actions.find(a=>a.op==='fill')!);},async text(){return {text:null,usage};}};
   const m=new TaskManager(new TaskStore(dir),provider,()=>browser);
-  try{const t=await m.start({goal:'Search',url:blank.url});const r=await stopped(m,t.id);assert.equal(r.status,'needs_input');assert.equal(r.pending?.kind,'text');assert.equal(browser.actions,0);}finally{await m.shutdown();await rm(dir,{recursive:true,force:true});}
+  try{const t=await m.start({browser:'isolated',goal:'Search',url:blank.url});const r=await stopped(m,t.id);assert.equal(r.status,'needs_input');assert.equal(r.pending?.kind,'text');assert.equal(browser.actions,0);}finally{await m.shutdown();await rm(dir,{recursive:true,force:true});}
 });
 
 test('low confidence retains alternatives for review without executing',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'jev-confidence-'));const browser=new FakeBrowser();
   const provider:DecisionProvider={async choose(p){return {...choice(p,p.actions.find(a=>a.op==='wait')!),confidence:.51};},async text(){return {text:null,usage};}};
   const m=new TaskManager(new TaskStore(dir),provider,()=>browser);
-  try{const t=await m.start({goal:'Wait',url:blank.url});const r=await stopped(m,t.id);assert.equal(r.status,'needs_review');assert.equal(r.steps,0);assert.equal(browser.actions,0);assert.equal(r.lastDecision?.confidence,.51);assert.equal(r.lastDecision?.alternatives[0].action.op,'wait');assert.match(r.message,/0.51 below 0.55/);}finally{await m.shutdown();await rm(dir,{recursive:true,force:true});}
+  try{const t=await m.start({browser:'isolated',goal:'Wait',url:blank.url});const r=await stopped(m,t.id);assert.equal(r.status,'needs_review');assert.equal(r.steps,0);assert.equal(browser.actions,0);assert.equal(r.lastDecision?.confidence,.51);assert.equal(r.lastDecision?.alternatives[0].action.op,'wait');assert.match(r.message,/0.51 below 0.55/);}finally{await m.shutdown();await rm(dir,{recursive:true,force:true});}
 });

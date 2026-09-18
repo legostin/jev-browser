@@ -114,3 +114,17 @@ test('Git archive excludes an untracked API key before release validation', { ti
   assert.ok(observed);
   assert.equal(await readFile(join(release, '.ready'), 'utf8'), revision);
 });
+
+test('confidence command preserves credentials and rejects out-of-range thresholds',async t=>{
+  const root=await fixture(t),config=join(root,'private.env');
+  const old=process.env.JEV_CONFIG_FILE;
+  t.after(()=>{if(old===undefined)delete process.env.JEV_CONFIG_FILE;else process.env.JEV_CONFIG_FILE=old;});
+  process.env.JEV_CONFIG_FILE=config;
+  await writeFile(config,'OPENROUTER_API_KEY=private-sentinel\nJEV_MIN_CONFIDENCE=0.55\n',{mode:0o600});
+  const {main}=await import('../scripts/manage.mjs');
+  await main(root,['confidence','0.65']);
+  const changed=await readFile(config,'utf8');
+  assert.ok(changed.includes('OPENROUTER_API_KEY=private-sentinel'));assert.ok(changed.includes('JEV_MIN_CONFIDENCE=0.65'));
+  await assert.rejects(main(root,['confidence','1.2']),/от 0 до 1/);
+  assert.equal(await readFile(config,'utf8'),changed);
+});

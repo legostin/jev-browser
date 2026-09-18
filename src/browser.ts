@@ -27,6 +27,7 @@ export class BrowserAdapter {
   private userPages = new Set<Page>();
   constructor(private extension?:ExtensionBridge) {}
 
+  isConnected() { return !!this.browser?.isConnected(); }
   async open(url: string, headless: boolean) {
     httpUrl(url);
     this.script = await readFile(fileURLToPath(new URL('../collector.js', import.meta.url)), 'utf8');

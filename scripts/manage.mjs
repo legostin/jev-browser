@@ -144,6 +144,18 @@ export async function main(root, args) {
   const [command, value] = args;
   if (command === 'update') return update(root, value === '--auto');
   if (command === 'configure') return configure();
+  if (command === 'confidence') {
+    const threshold=Number(value);
+    if(value===undefined||value.trim()===''||!Number.isFinite(threshold)||threshold<0||threshold>1) throw new Error('Укажите порог от 0 до 1: jev confidence 0.55');
+    const config=process.env.JEV_CONFIG_FILE||join(homedir(),'.config/jev-browser/.env');
+    await mkdir(dirname(config),{recursive:true,mode:0o700});
+    const prior=existsSync(config)?await readFile(config,'utf8'):'';
+    const lines=prior.split('\n').filter(line=>!/^\s*(?:export\s+)?JEV_MIN_CONFIDENCE\s*=/.test(line));
+    const temporary=`${config}.${randomUUID()}.tmp`;
+    await writeFile(temporary,`${lines.join('\n').trim()}\nJEV_MIN_CONFIDENCE=${threshold}\n`,{mode:0o600});
+    await rename(temporary,config);
+    console.log(`Порог новых задач: ${threshold}. Перезапустите MCP. Текущие задачи сохраняют свой порог.`);return;
+  }
   if (command === 'status') {
     console.log(JSON.stringify({ ...await json(join(root, 'state.json')), ...await json(join(root, 'settings.json')),
       update: await json(join(root, 'update-status.json')), chromeExtension: join(root, 'current/chrome-extension') }, null, 2)); return;
@@ -168,5 +180,5 @@ export async function main(root, args) {
     const release = await realpath(join(root, 'current'));
     execFileSync(process.execPath, [join(release, 'dist/src/cli.js'), command], {cwd:release,stdio:'inherit'}); return;
   }
-  throw new Error('Команды: status, configure, update, auto-update on|off, rollback, doctor, serve');
+  throw new Error('Команды: status, configure, confidence 0..1, update, auto-update on|off, rollback, doctor, serve');
 }
